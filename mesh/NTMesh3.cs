@@ -546,6 +546,7 @@ namespace g4
         }
         
 
+
         public int AppendTriangle(int v0, int v1, int v2, int gid = -1) {
             return AppendTriangle(new Index3i(v0, v1, v2), gid);
         }
@@ -587,6 +588,59 @@ namespace g4
             updateTimeStamp(true);
             return tid;
         }
+
+        /// <summary>
+        /// Remove vertex vID, and all connected triangles if bRemoveAllTriangles = true
+        /// (if false, them throws exception if there are still any triangles!)
+        /// if bPreserveManifold, checks that we will not create a bowtie vertex first
+        /// </summary>
+        public MeshResult RemoveVertex(int vID, bool bRemoveAllTriangles = true, bool bPreserveManifold = false)
+        {
+            if (vertices_refcount.isValid(vID) == false)
+                return MeshResult.Failed_NotAVertex;
+
+            if (bRemoveAllTriangles)
+            {
+
+                // if any one-ring vtx is a boundary vtx and one of its outer-ring edges is an
+                // interior edge then we will create a bowtie if we remove that triangle
+                if (bPreserveManifold)
+                {
+                    foreach (int tid in VtxTrianglesItr(vID))
+                    {
+                        Index3i tri = GetTriangle(tid);
+                        int j = IndexUtil.find_tri_index(vID, ref tri);
+                        int oa = tri[(j + 1) % 3], ob = tri[(j + 2) % 3];
+                        int eid = find_edge(oa, ob);
+                        if (IsBoundaryEdge(eid))
+                            continue;
+                        if (IsBoundaryVertex(oa) || IsBoundaryVertex(ob))
+                            return MeshResult.Failed_WouldCreateBowtie;
+                    }
+                }
+
+                List<int> tris = new List<int>();
+                GetVtxTriangles(vID, tris);
+                foreach (int tID in tris)
+                {
+                    MeshResult result = RemoveTriangle(tID, false, bPreserveManifold);
+                    if (result != MeshResult.Ok)
+                        return result;
+                }
+            }
+
+            if (vertices_refcount.refCount(vID) != 1)
+                throw new NotImplementedException("DMesh3.RemoveVertex: vertex is still referenced");
+
+            vertices_refcount.decrement(vID);
+            Debug.Assert(vertices_refcount.isValid(vID) == false);
+            vertex_edges.Clear(vID);
+
+            updateTimeStamp(true);
+            return MeshResult.Ok;
+        }
+
+
         // helper fn for above, just makes code cleaner
         void add_tri_edge(int tid, int v0, int v1, int j, int eid)
         {
@@ -1664,8 +1718,195 @@ namespace g4
         }
 
 
+        public MeshResult ReverseTriOrientation(int tID)
+        {
+            if (!IsTriangle(tID))
+                return MeshResult.Failed_NotATriangle;
+            internal_reverse_tri_orientation(tID);
+            updateTimeStamp(true);
+            return MeshResult.Ok;
+        }
+
+        void internal_reverse_tri_orientation(int tID)
+        {
+            Index3i t = GetTriangle(tID);
+            set_triangle(tID, t[1], t[0], t[2]);
+            Index3i te = GetTriEdges(tID);
+            set_triangle_edges(tID, te[0], te[2], te[1]);
+        }
 
 
+        /// <summary>
+        /// Remove a tID from the mesh. Also removes any unreferenced edges after tri is removed.
+        /// If bRemoveIsolatedVertices is false, then if you remove all tris from a vert, that vert is also removed.
+        /// If bPreserveManifold, we check that you will not create a bowtie vertex (and return false).
+        ///   If this check is not done, you have to make sure you don't create a bowtie, because other
+        ///   code assumes we don't have bowties, and will not handle it properly
+        /// </summary>
+        public MeshResult RemoveTriangle(int tID, bool bRemoveIsolatedVertices = true, bool bPreserveManifold = false)
+        {
+            if (!triangles_refcount.isValid(tID))
+            {
+                Debug.Assert(false);
+                return MeshResult.Failed_NotATriangle;
+            }
+
+            Index3i tv = GetTriangle(tID);
+            Index3i te = GetTriEdges(tID);
+
+            // if any tri vtx is a boundary vtx connected to two interior edges, then
+            // we cannot remove this triangle because it would create a bowtie vertex!
+            // (that vtx already has 2 boundary edges, and we would add two more)
+            if (bPreserveManifold)
+            {
+                for (int j = 0; j < 3; ++j)
+                {
+                    if (IsBoundaryVertex(tv[j]))
+                    {
+                        if (IsBoundaryEdge(te[j]) == false && IsBoundaryEdge(te[(j + 2) % 3]) == false)
+                            return MeshResult.Failed_WouldCreateBowtie;
+                    }
+                }
+            }
+
+            // Remove triangle from its edges. if edge has no triangles left,
+            // then it is removed.
+            for (int j = 0; j < 3; ++j)
+            {
+                int eid = te[j];
+                replace_edge_triangle(eid, tID, InvalidID);
+                if (edges[4 * eid + 2] == InvalidID)
+                {
+                    int a = edges[4 * eid];
+                    vertex_edges.Remove(a, eid);
+
+                    int b = edges[4 * eid + 1];
+                    vertex_edges.Remove(b, eid);
+
+                    edges_refcount.decrement(eid);
+                }
+            }
+
+            // free this triangle
+            triangles_refcount.decrement(tID);
+            Debug.Assert(triangles_refcount.isValid(tID) == false);
+
+            // Decrement vertex refcounts. If any hit 1 and we got remove-isolated flag,
+            // we need to remove that vertex
+            for (int j = 0; j < 3; ++j)
+            {
+                int vid = tv[j];
+                vertices_refcount.decrement(vid);
+                if (bRemoveIsolatedVertices && vertices_refcount.refCount(vid) == 1)
+                {
+                    vertices_refcount.decrement(vid);
+                    Debug.Assert(vertices_refcount.isValid(vid) == false);
+                    vertex_edges.Clear(vid);
+                }
+            }
+
+            updateTimeStamp(true);
+            return MeshResult.Ok;
+        }
+
+        public virtual MeshResult SetTriangle(int tID, Index3i newv, bool bRemoveIsolatedVertices = true)
+        {
+            Index3i tv = GetTriangle(tID);
+            Index3i te = GetTriEdges(tID);
+            if (tv.a == newv.a && tv.b == newv.b)
+                te.a = -1;
+            if (tv.b == newv.b && tv.c == newv.c)
+                te.b = -1;
+            if (tv.c == newv.c && tv.a == newv.a)
+                te.c = -1;
+
+            if (!triangles_refcount.isValid(tID))
+            {
+                Debug.Assert(false);
+                return MeshResult.Failed_NotATriangle;
+            }
+            if (IsVertex(newv[0]) == false || IsVertex(newv[1]) == false || IsVertex(newv[2]) == false)
+            {
+                Util.gDevAssert(false);
+                return MeshResult.Failed_NotAVertex;
+            }
+            if (newv[0] == newv[1] || newv[0] == newv[2] || newv[1] == newv[2])
+            {
+                Util.gDevAssert(false);
+                return MeshResult.Failed_BrokenTopology;
+            }
+            // look up edges. if any already have two triangles, this would 
+            // create non-manifold geometry and so we do not allow it
+            int e0 = find_edge(newv[0], newv[1]);
+            int e1 = find_edge(newv[1], newv[2]);
+            int e2 = find_edge(newv[2], newv[0]);
+            if ((te.a != -1 && e0 != InvalidID && IsBoundaryEdge(e0) == false)
+                 || (te.b != -1 && e1 != InvalidID && IsBoundaryEdge(e1) == false)
+                 || (te.c != -1 && e2 != InvalidID && IsBoundaryEdge(e2) == false))
+            {
+                return MeshResult.Failed_BrokenTopology;
+            }
+
+
+            // [TODO] check that we are not going to create invalid stuff...
+
+            // Remove triangle from its edges. if edge has no triangles left, then it is removed.
+            for (int j = 0; j < 3; ++j)
+            {
+                int eid = te[j];
+                if (eid == -1)      // we don't need to modify this edge
+                    continue;
+                replace_edge_triangle(eid, tID, InvalidID);
+                if (edges[4 * eid + 2] == InvalidID)
+                {
+                    int a = edges[4 * eid];
+                    vertex_edges.Remove(a, eid);
+
+                    int b = edges[4 * eid + 1];
+                    vertex_edges.Remove(b, eid);
+
+                    edges_refcount.decrement(eid);
+                }
+            }
+
+            // Decrement vertex refcounts. If any hit 1 and we got remove-isolated flag,
+            // we need to remove that vertex
+            for (int j = 0; j < 3; ++j)
+            {
+                int vid = tv[j];
+                if (vid == newv[j])     // we don't need to modify this vertex
+                    continue;
+                vertices_refcount.decrement(vid);
+                if (bRemoveIsolatedVertices && vertices_refcount.refCount(vid) == 1)
+                {
+                    vertices_refcount.decrement(vid);
+                    Debug.Assert(vertices_refcount.isValid(vid) == false);
+                    vertex_edges.Clear(vid);
+                }
+            }
+
+
+            // ok now re-insert with new vertices
+            int i = 3 * tID;
+            for (int j = 0; j < 3; ++j)
+            {
+                if (newv[j] != tv[j])
+                {
+                    triangles[i + j] = newv[j];
+                    vertices_refcount.increment(newv[j]);
+                }
+            }
+
+            if (te.a != -1)
+                add_tri_edge(tID, newv[0], newv[1], 0, e0);
+            if (te.b != -1)
+                add_tri_edge(tID, newv[1], newv[2], 1, e1);
+            if (te.c != -1)
+                add_tri_edge(tID, newv[2], newv[0], 2, e2);
+
+            updateTimeStamp(true);
+            return MeshResult.Ok;
+        }
     }
 }
 

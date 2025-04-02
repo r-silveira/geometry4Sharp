@@ -19,6 +19,17 @@ namespace g4
             }
         }
 
+        public static IEnumerable<int> FilteredVertices(NTMesh3 mesh, Func<NTMesh3, int, bool> FilterF )
+        {
+            int N = mesh.MaxVertexID;
+            for ( int i = 0; i < N; ++i ) {
+                if ( mesh.IsVertex(i) ) {
+                    if (FilterF(mesh, i))
+                        yield return i;
+                }
+            }
+        }
+
 
         public static IEnumerable<int> FilteredEdges(DMesh3 mesh, Func<DMesh3, int, bool> FilterF )
         {
@@ -31,8 +42,30 @@ namespace g4
             }
         }
 
+        public static IEnumerable<int> FilteredEdges(NTMesh3 mesh, Func<NTMesh3, int, bool> FilterF )
+        {
+            int N = mesh.MaxEdgeID;
+            for ( int i = 0; i < N; ++i ) {
+                if ( mesh.IsEdge(i) ) {
+                    if (FilterF(mesh, i))
+                        yield return i;
+                }
+            }
+        }
+
 
         public static IEnumerable<int> FilteredTriangles(DMesh3 mesh, Func<DMesh3, int, bool> FilterF )
+        {
+            int N = mesh.MaxTriangleID;
+            for ( int i = 0; i < N; ++i ) {
+                if ( mesh.IsTriangle(i) ) {
+                    if (FilterF(mesh, i))
+                        yield return i;
+                }
+            }
+        }
+
+        public static IEnumerable<int> FilteredTriangles(NTMesh3 mesh, Func<NTMesh3, int, bool> FilterF )
         {
             int N = mesh.MaxTriangleID;
             for ( int i = 0; i < N; ++i ) {
@@ -60,9 +93,39 @@ namespace g4
 
 
         /// <summary>
+        /// Boundary vertices of mesh
+        /// </summary>
+        public static IEnumerable<int> BoundaryVertices(NTMesh3 mesh)
+        {
+            int N = mesh.MaxVertexID;
+            for ( int i = 0; i < N; ++i ) {
+                if ( mesh.IsVertex(i) ) {
+                    if (mesh.IsBoundaryVertex(i))
+                        yield return i;
+                }
+            }
+        }
+
+
+        /// <summary>
         /// boundary vertices of mesh, but based on edges, so returns each vertex twice!
         /// </summary>
         public static IEnumerable<int> BoundaryEdgeVertices(DMesh3 mesh)
+        {
+            int N = mesh.MaxEdgeID;
+            for (int i = 0; i < N; ++i) {
+                if (mesh.IsEdge(i) && mesh.IsBoundaryEdge(i)) {
+                    Index2i ev = mesh.GetEdgeV(i);
+                    yield return ev.a;
+                    yield return ev.b;
+                }
+            }
+        }
+
+        /// <summary>
+        /// boundary vertices of mesh, but based on edges, so returns each vertex twice!
+        /// </summary>
+        public static IEnumerable<int> BoundaryEdgeVertices(NTMesh3 mesh)
         {
             int N = mesh.MaxEdgeID;
             for (int i = 0; i < N; ++i) {
@@ -87,6 +150,18 @@ namespace g4
         }
 
 
+        public static IEnumerable<int> InteriorVertices(NTMesh3 mesh)
+        {
+            int N = mesh.MaxVertexID;
+            for ( int i = 0; i < N; ++i ) {
+                if ( mesh.IsVertex(i) ) {
+                    if (mesh.IsBoundaryVertex(i) == false)
+                        yield return i;
+                }
+            }
+        }
+
+
 
         public static IEnumerable<int> GroupBoundaryVertices(DMesh3 mesh)
         {
@@ -100,6 +175,18 @@ namespace g4
         }
 
 
+        //public static IEnumerable<int> GroupBoundaryVertices(NTMesh3 mesh)
+        //{
+        //    int N = mesh.MaxVertexID;
+        //    for ( int i = 0; i < N; ++i ) {
+        //        if ( mesh.IsVertex(i) ) {
+        //            if (mesh.IsGroupBoundaryVertex(i))
+        //                yield return i;
+        //        }
+        //    }
+        //}
+
+
         public static IEnumerable<int> GroupJunctionVertices(DMesh3 mesh)
         {
             int N = mesh.MaxVertexID;
@@ -111,8 +198,30 @@ namespace g4
             }
         }
 
+        //public static IEnumerable<int> GroupJunctionVertices(NTMesh3 mesh)
+        //{
+        //    int N = mesh.MaxVertexID;
+        //    for ( int i = 0; i < N; ++i ) {
+        //        if ( mesh.IsVertex(i) ) {
+        //            if (mesh.IsGroupJunctionVertex(i))
+        //                yield return i;
+        //        }
+        //    }
+        //}
+
 
         public static IEnumerable<int> BoundaryEdges(DMesh3 mesh)
+        {
+            int N = mesh.MaxEdgeID;
+            for ( int i = 0; i < N; ++i ) {
+                if ( mesh.IsEdge(i) ) {
+                    if (mesh.IsBoundaryEdge(i))
+                        yield return i;
+                }
+            }
+        }
+
+        public static IEnumerable<int> BoundaryEdges(NTMesh3 mesh)
         {
             int N = mesh.MaxEdgeID;
             for ( int i = 0; i < N; ++i ) {
@@ -136,6 +245,18 @@ namespace g4
 		}
 
 
+		public static IEnumerable<int> InteriorEdges(NTMesh3 mesh)
+		{
+			int N = mesh.MaxEdgeID;
+			for (int i = 0; i < N; ++i) {
+				if (mesh.IsEdge(i)) {
+					if (mesh.IsBoundaryEdge(i) == false)
+						yield return i;
+				}
+			}
+		}
+
+
         public static IEnumerable<int> GroupBoundaryEdges(DMesh3 mesh)
         {
             int N = mesh.MaxEdgeID;
@@ -148,9 +269,19 @@ namespace g4
         }
 
 
-
-
         public static IEnumerable<int> BowtieVertices(DMesh3 mesh)
+        {
+            int N = mesh.MaxVertexID;
+            for ( int i = 0; i < N; ++i ) {
+                if ( mesh.IsVertex(i) ) {
+                    if (mesh.IsBowtieVertex(i))
+                        yield return i;
+                }
+            }
+        }
+
+
+        public static IEnumerable<int> BowtieVertices(NTMesh3 mesh)
         {
             int N = mesh.MaxVertexID;
             for ( int i = 0; i < N; ++i ) {
