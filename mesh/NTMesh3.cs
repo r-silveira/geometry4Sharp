@@ -2114,13 +2114,6 @@ namespace g4
                             rc++;
                     }
 
-                    //if (replace_tri_vertex(edges[4 * eid + 2], c, a) >= 0)
-                    //    rc++;
-                    //if (edges[4 * eid + 3] != InvalidID)
-                    //{
-                    //    if (replace_tri_vertex(edges[4 * eid + 3], c, a) >= 0)
-                    //        rc++;
-                    //}
                     vertex_edges.Insert(a, eid);
                     if (rc > 0)
                     {
@@ -2154,14 +2147,6 @@ namespace g4
                         if (replace_tri_vertex(eid_t, d, b) >= 0)
                             rc++;
                     }
-
-                    //if (replace_tri_vertex(edges[4 * eid + 2], d, b) >= 0)
-                    //    rc++;
-                    //if (edges[4 * eid + 3] != InvalidID)
-                    //{
-                    //    if (replace_tri_vertex(edges[4 * eid + 3], d, b) >= 0)
-                    //        rc++;
-                    //}
 
                     vertex_edges.Insert(b, eid);
                     if (rc > 0)
@@ -2240,6 +2225,114 @@ namespace g4
                             //goto restart_merge_loop;
                             found = true;			  // exit outer i loop
                             break;					  // exit inner j loop
+                        }
+                    }
+                }
+            }
+
+            updateTimeStamp(true);
+            return MeshResult.Ok;
+        }
+
+        public MeshResult MergeVertices(int vKeep, int vDiscard, bool checkVerticesEdgesDirections = true)
+        {
+            if (vKeep == vDiscard)
+                return MeshResult.Ok;
+
+            if (!IsVertex(vKeep) || !IsVertex(vDiscard))
+                return MeshResult.Failed_NotAVertex;
+
+            // Merging vertices connected by an edge would result in degenerate triangles
+            if (find_edge(vKeep, vDiscard) != NTMesh3.InvalidID)
+                return MeshResult.Failed_InvalidNeighbourhood;
+
+            var edgesKeep = VtxEdgesItr(vKeep);
+            var edgesDiscard = VtxEdgesItr(vDiscard);
+
+            // Checking if we would need to merge edges with same direction
+            if (checkVerticesEdgesDirections)
+            {
+                foreach (var eidKeep in edgesKeep)
+                {
+                    // If either edge is not a boundary edge, we could not merge
+                    // the vertices without merging edges with the same direction
+                    if (!IsBoundaryEdge(eidKeep))
+                        return MeshResult.Failed_NotABoundaryEdge;
+
+                    var ovKeep = edge_other_v(eidKeep, vKeep);
+                    var tKeep = EdgeTrianglesItr(vKeep).First();
+
+                    var v0Keep = vKeep;
+                    var v1Keep = ovKeep;
+                    IndexUtil.orient_tri_edge(ref v0Keep, ref v1Keep, GetTriangle(tKeep));
+
+                    foreach (var eidDiscard in edgesDiscard)
+                    {
+                        var ovDiscard = edge_other_v(eidDiscard, vDiscard);
+                        var tDiscard = EdgeTrianglesItr(vDiscard).First();
+
+                        var v0Discard = vDiscard;
+                        var v1Discard = ovDiscard;
+                        IndexUtil.orient_tri_edge(ref v0Discard, ref v1Discard, GetTriangle(tDiscard));
+
+                        // Joinable edges have opposing orientations, so Va needs to be close to Vd,
+                        // and Vb needs to be close to Vc. If there are edges that would be merged,
+                        // maybe checking just the first one we find would already be enough.
+                        Vector3d Va = GetVertex(v0Keep), Vb = GetVertex(v1Keep), Vc = GetVertex(v0Discard), Vd = GetVertex(v1Discard);
+                        if ((Va.DistanceSquared(Vd) + Vb.DistanceSquared(Vc)) >
+                            (Va.DistanceSquared(Vc) + Vb.DistanceSquared(Vd)))
+                            return MeshResult.Failed_SameOrientation;
+                    }
+                }
+            }
+
+
+            // Replace vDiscard with vKeep in edges and tris connected to vDiscard, and move edges to vKeep
+            foreach (int eid in vertex_edges.ValueItr(vDiscard))
+            {
+                replace_edge_vertex(eid, vDiscard, vKeep);
+                short rc = 0;
+
+                var eid_tris = EdgeTrianglesItr(eid);
+                foreach (var eid_t in eid_tris)
+                {
+                    if (replace_tri_vertex(eid_t, vDiscard, vKeep) >= 0)
+                        rc++;
+                }
+
+                vertex_edges.Insert(vKeep, eid);
+                if (rc > 0)
+                {
+                    vertices_refcount.increment(vKeep, rc);
+                    vertices_refcount.decrement(vDiscard, rc);
+                }
+            }
+            vertex_edges.Clear(vDiscard);
+            vertices_refcount.decrement(vDiscard);
+
+            // If both vKeep and vDiscard had an edge to the same vertex, merging
+            // vKeep and vDiscard would result in a duplicate edge
+            List<int> edges_v = vertex_edges_list(vKeep);
+            int Nedges = edges_v.Count;
+            bool found = false;
+            for (int i = 0; i < Nedges && !found; ++i)
+            {
+                int edge1 = edges_v[i];
+                int vert1 = edge_other_v(edge1, vKeep);
+                for (int j = i + 1; j < Nedges; ++j)
+                {
+                    int edge2 = edges_v[j];
+                    int vert2 = edge_other_v(edge2, vKeep);
+                    if (vert1 == vert2)
+                    { 
+                        // Replace edge2 by edge1
+                        foreach (var tri_2 in EdgeTrianglesItr(edge2))
+                        {
+                            replace_triangle_edge(tri_2, edge2, edge1);
+                            add_edge_triangle(edge1, tri_2);
+                            vertex_edges.Remove(vKeep, edge2);
+                            vertex_edges.Remove(vert1, edge2);
+                            edges_refcount.decrement(edge2);
                         }
                     }
                 }
@@ -2348,8 +2441,6 @@ namespace g4
             updateTimeStamp(true);
             return MeshResult.Ok;
         }
-
-
     }
 }
 
