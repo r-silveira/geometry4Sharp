@@ -1863,6 +1863,7 @@ namespace g4
          *  Hierarchical Mesh Winding Number computation
          */
 
+        private readonly object _windingCacheLock = new object();
 
         /// <summary>
         /// Evaluate the mesh winding number at point. To do this, we must construct additional
@@ -1875,13 +1876,18 @@ namespace g4
         /// </summary>
         public virtual double WindingNumber(Vector3d p)
         {
-            if (mesh_timestamp != mesh.ShapeTimestamp)
-                throw new Exception("NTMeshAABBTree3.WindingNumber: mesh has been modified since tree construction");
-
-            if (WindingCache == null || winding_cache_timestamp != mesh.ShapeTimestamp)
+            lock (_windingCacheLock)
             {
-                build_winding_cache();
-                winding_cache_timestamp = mesh.ShapeTimestamp;
+                if (mesh_timestamp != mesh.ShapeTimestamp)
+                {
+                    throw new Exception("NTMeshAABBTree3.WindingNumber: mesh has been modified since tree construction");
+                }
+
+                if (WindingCache == null || winding_cache_timestamp != mesh.ShapeTimestamp)
+                {
+                    build_winding_cache();
+                    winding_cache_timestamp = mesh.ShapeTimestamp;
+                }
             }
 
             double sum = branch_winding_num(root_index, p);
@@ -2131,19 +2137,25 @@ namespace g4
         /// </summary>
         public int FWNApproxOrder = 2;
 
+        private readonly object _fastWindingCacheLock = new object();
 
         /// <summary>
         /// Fast approximation of winding number using far-field approximations
         /// </summary>
         public virtual double FastWindingNumber(Vector3d p)
         {
-            if (mesh_timestamp != mesh.ShapeTimestamp)
-                throw new Exception("NTMeshAABBTree3.FastWindingNumber: mesh has been modified since tree construction");
-
-            if (FastWindingCache == null || fast_winding_cache_timestamp != mesh.ShapeTimestamp)
+            lock (_fastWindingCacheLock)
             {
-                build_fast_winding_cache();
-                fast_winding_cache_timestamp = mesh.ShapeTimestamp;
+                if (mesh_timestamp != mesh.ShapeTimestamp)
+                {
+                    throw new Exception("NTMeshAABBTree3.FastWindingNumber: mesh has been modified since tree construction");
+                }
+
+                if (FastWindingCache == null || fast_winding_cache_timestamp != mesh.ShapeTimestamp)
+                {
+                    build_fast_winding_cache();
+                    fast_winding_cache_timestamp = mesh.ShapeTimestamp;
+                }
             }
 
             double sum = branch_fast_winding_num(root_index, p);
