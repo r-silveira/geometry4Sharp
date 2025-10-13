@@ -13,6 +13,7 @@ namespace g4
         // considered. Both filters will be applied if available.
         public IEnumerable<int> FilterSet = null;
         public Func<int, bool> FilterF = null;
+        public Func<Triangle3d, Triangle3d, bool> AdjacencyFilterF = null;
 
         // filter on seed values for region-growing. This can be useful
         // to restrict components to certain areas, when you don't want
@@ -138,6 +139,9 @@ namespace g4
             List<int> queue = new List<int>(NT / 10);
             List<int> cur_comp = new List<int>(NT / 10);
 
+            var tri = new Triangle3d();
+            var ntri = new Triangle3d();
+
             // keep finding valid seed triangles and growing connected components
             // until we are done
             IEnumerable<int> range = (FilterSet != null) ? FilterSet : activeRange;
@@ -160,8 +164,22 @@ namespace g4
                     active[cur_t] = 2;   // tri has been processed
                     cur_comp.Add(cur_t);
 
+                    if (AdjacencyFilterF != null)
+                    {
+                        Mesh.GetTriVertices(cur_t, ref tri.V0, ref tri.V1, ref tri.V2);
+                    }
+
                     var nbrs = Mesh.TriTrianglesItr(cur_t).ToList();
                     foreach (var nbr_t in nbrs) {
+                        if (AdjacencyFilterF != null)
+                        {
+                            Mesh.GetTriVertices(nbr_t, ref ntri.V0, ref ntri.V1, ref ntri.V2);
+                            if (!AdjacencyFilterF(tri, ntri))
+                            {
+                                continue;
+                            }
+                        }
+
                         if ( nbr_t != NTMesh3.InvalidID && active[nbr_t] == 0 ) {
                             queue.Add(nbr_t);
                             active[nbr_t] = 1;           // in queue
@@ -194,9 +212,10 @@ namespace g4
         /// Separate input mesh into disconnected shells.
         /// Resulting array is sorted by decreasing triangle count.
         /// </summary>
-        public static NTMesh3[] Separate(NTMesh3 meshIn)
+        public static NTMesh3[] Separate(NTMesh3 meshIn, Func<Triangle3d, Triangle3d, bool> adjacencyFunc = null)
         {
             var c = new NTMeshConnectedComponents(meshIn);
+            c.AdjacencyFilterF = adjacencyFunc;
             c.FindConnectedT();
             c.SortByCount(false);
 
