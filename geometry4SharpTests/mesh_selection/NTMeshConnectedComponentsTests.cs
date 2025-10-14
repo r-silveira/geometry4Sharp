@@ -4,8 +4,9 @@ using g4;
 
 namespace geometry4SharpTests.mesh_selection
 {
-    public class NTMeshConnectedComponentsTest
+    public class NTMeshConnectedComponentsTests
     {
+        #region Test Data
         private static NTMesh3 CreateCube()
         {
             var mesh = new NTMesh3();
@@ -37,6 +38,7 @@ namespace geometry4SharpTests.mesh_selection
 
             return mesh;
         }
+        #endregion
 
         [Fact]
         public void NTMeshConnectedComponents_Separate_Cube()

@@ -78,6 +78,21 @@ namespace g4
 
         }
 
+        public static void FillHoles(NTMesh3 mesh, bool onlyThreeVerticesLoops = false)
+        {
+            var loops = new NTMeshBoundaryLoops(mesh);
 
+            foreach (var loop in loops)
+            {
+                if (onlyThreeVerticesLoops && loop.VertexCount != 3)
+                {
+                    continue;
+                }
+
+                var filler = new NTSimpleHoleFiller(mesh, loop);
+                filler.Fill();
+            }
+
+        }
     }
 }
