@@ -41,9 +41,4 @@
     <None Include="LICENSE" Pack="true" PackagePath="LICENSE.txt" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="FluentAssertions" Version="7.0.0" />
-    <PackageReference Include="xunit.extensibility.core" Version="2.9.3" />
-  </ItemGroup>
-
 </Project>
