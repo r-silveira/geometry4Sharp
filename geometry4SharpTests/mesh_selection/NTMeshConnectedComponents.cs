@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 
 using g4;
 
@@ -43,7 +43,7 @@ namespace geometry4SharpTests.mesh_selection
         {
             var mesh = CreateCube();
             var components = NTMeshConnectedComponents.Separate(mesh);
-            components.Length.Should().Be(1);
+            components.Length.ShouldBe(1);
         }
 
         [Fact]
@@ -56,7 +56,7 @@ namespace geometry4SharpTests.mesh_selection
 
             var mesh = CreateCube();
             var components = NTMeshConnectedComponents.Separate(mesh, AdjacencyFilterFunction);
-            components.Length.Should().Be(6);
+            components.Length.ShouldBe(6);
         }
     }
 }
