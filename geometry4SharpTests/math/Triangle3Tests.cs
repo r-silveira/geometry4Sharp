@@ -1,7 +1,6 @@
-using FluentAssertions;
+using Shouldly;
 
 using g4;
-using Xunit;
 
 namespace geometry4SharpTests
 {
@@ -19,12 +18,12 @@ namespace geometry4SharpTests
 
             var isPointOnTri = triangleA.IsPointInTriangle(pointA);
 
-            isPointOnTri.Should().BeFalse();
+            isPointOnTri.ShouldBeFalse();
 
 
             var pointB = new Vector3d(-21.01844597, 3.80000305, -5.53531647);
 
-            triangleA.IsPointInTriangle(pointB).Should().BeTrue();
+            triangleA.IsPointInTriangle(pointB).ShouldBeTrue();
         }
 
         [Fact]
@@ -37,7 +36,7 @@ namespace geometry4SharpTests
 
             var pointB = new Vector3d(-21.01844597, 3.80000305, -5.53531647);
 
-            triangleA.IsPointInTriangle(pointB).Should().BeTrue();
+            triangleA.IsPointInTriangle(pointB).ShouldBeTrue();
         }
     }
 }

@@ -1,7 +1,6 @@
-using FluentAssertions;
+using Shouldly;
 
 using g4;
-using Xunit;
 
 namespace geometry4SharpTests.distance
 {
@@ -22,8 +21,8 @@ namespace geometry4SharpTests.distance
 
             var triangleDistance = new DistTriangle3Triangle3(triangleA, triangleB).Compute();
 
-            triangleDistance.Triangle0Closest.y.Should().BeApproximately(3.80, 0.1);
-            triangleDistance.Triangle1Closest.y.Should().BeApproximately(5.92, 0.1);
+            triangleDistance.Triangle0Closest.y.ShouldBe(3.80, 0.1);
+            triangleDistance.Triangle1Closest.y.ShouldBe(5.92, 0.1);
         }
 
         [Fact]
@@ -41,8 +40,8 @@ namespace geometry4SharpTests.distance
 
             var triangleDistance = new DistTriangle3Triangle3(triangleA, triangleB).Compute();
 
-            triangleDistance.Triangle0Closest.y.Should().BeApproximately(3.80, 0.1);
-            triangleDistance.Triangle1Closest.y.Should().BeApproximately(5.95, 0.1);
+            triangleDistance.Triangle0Closest.y.ShouldBe(3.80, 0.1);
+            triangleDistance.Triangle1Closest.y.ShouldBe(5.95, 0.1);
         }
 
         [Fact]
@@ -60,8 +59,8 @@ namespace geometry4SharpTests.distance
 
             var triangleDistance = new DistTriangle3Triangle3(triangleA, triangleB).Compute();
 
-            triangleDistance.Triangle0Closest.y.Should().BeApproximately(3.80, 0.1);
-            triangleDistance.Triangle1Closest.y.Should().BeApproximately(5.92, 0.1);
+            triangleDistance.Triangle0Closest.y.ShouldBe(3.80, 0.1);
+            triangleDistance.Triangle1Closest.y.ShouldBe(5.92, 0.1);
         }
 
         [Fact]
@@ -79,7 +78,7 @@ namespace geometry4SharpTests.distance
 
             var triangleDistance = new DistTriangle3Triangle3(triangleA, triangleB).Compute();
 
-            triangleDistance.DistanceSquared.Should().BeApproximately(0, 0.01);
+            triangleDistance.DistanceSquared.ShouldBe(0, 0.01);
         }
     }
 }
