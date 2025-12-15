@@ -77,11 +77,6 @@ namespace g4
             return m;
         }
 
-
-
-
-
-
         public virtual void MakeMesh(NTMesh3 m)
         {
             int nV = vertices.Count;

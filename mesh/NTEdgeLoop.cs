@@ -148,14 +148,14 @@ namespace g4
         }
 
 
-        //public DCurve3 ToCurve(DMesh3 sourceMesh = null)
-        //{
-        //    if (sourceMesh == null)
-        //        sourceMesh = Mesh;
-        //    DCurve3 curve = MeshUtil.ExtractLoopV(sourceMesh, Vertices);
-        //    curve.Closed = true;
-        //    return curve;
-        //}
+        public DCurve3 ToCurve(NTMesh3 sourceMesh = null)
+        {
+            if (sourceMesh == null)
+                sourceMesh = Mesh;
+            DCurve3 curve = MeshUtil.ExtractLoopV(sourceMesh, Vertices);
+            curve.Closed = true;
+            return curve;
+        }
 
 
         /// <summary>

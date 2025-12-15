@@ -70,23 +70,24 @@ namespace g4
         public Vector3f n, c;
         public Vector2f uv;
         public bool bHaveN, bHaveUV, bHaveC;
+        public int gid;
 
-		public NewVertexInfo(Vector3d v) {
+		public NewVertexInfo(Vector3d v, int groupId = -1) {
 			this.v = v; n = c = Vector3f.Zero; uv = Vector2f.Zero;
-			bHaveN = bHaveC = bHaveUV = false;
+			bHaveN = bHaveC = bHaveUV = false; gid = groupId;
 		}
-		public NewVertexInfo(Vector3d v, Vector3f n) {
+		public NewVertexInfo(Vector3d v, Vector3f n, int groupId = -1) {
 			this.v = v; this.n = n; c = Vector3f.Zero; uv = Vector2f.Zero;
-			bHaveN = true; bHaveC = bHaveUV = false;
-		}
-		public NewVertexInfo(Vector3d v, Vector3f n, Vector3f c) {
+			bHaveN = true; bHaveC = bHaveUV = false; gid = groupId;
+        }
+		public NewVertexInfo(Vector3d v, Vector3f n, Vector3f c, int groupId = -1) {
 			this.v = v; this.n = n; this.c = c; uv = Vector2f.Zero;
-			bHaveN = bHaveC = true; bHaveUV = false;
-		}
-		public NewVertexInfo(Vector3d v, Vector3f n, Vector3f c, Vector2f uv) {
+			bHaveN = bHaveC = true; bHaveUV = false; gid = groupId;
+        }
+		public NewVertexInfo(Vector3d v, Vector3f n, Vector3f c, Vector2f uv, int groupId = -1) {
 			this.v = v; this.n = n; this.c = c; this.uv = uv;
-			bHaveN = bHaveC = bHaveUV = true;
-		}
+			bHaveN = bHaveC = bHaveUV = true; gid = groupId;
+        }
     }
 
 

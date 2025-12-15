@@ -46,7 +46,8 @@ namespace g4
         VertexColors = 2,
         VertexUVs = 4,
         FaceGroups = 8,
-        All = VertexNormals | VertexColors | VertexUVs | FaceGroups
+        VertexGroups = 16,
+        All = VertexNormals | VertexColors | VertexUVs | FaceGroups | VertexGroups
     }
 
     [Flags]
