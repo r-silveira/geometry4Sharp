@@ -823,18 +823,20 @@ namespace g4
 
             return true;
         }
-        public static DMesh3 Combine(params IMesh[] appendMeshes )
+        public static NTMesh3 Combine(params IMesh[] appendMeshes )
         {
-            DMesh3 m = new DMesh3();
-            MeshEditor editor = new MeshEditor(m);
-            foreach ( var mesh in appendMeshes ) {
+            var m = new NTMesh3();
+            var editor = new NTMeshEditor(m);
+            foreach ( var mesh in appendMeshes ) 
+            {
                 editor.AppendMesh(mesh, m.AllocateTriangleGroup());
             }
+
             return m;
         }
-        public static void Append(DMesh3 appendTo, DMesh3 append)
+        public static void Append(NTMesh3 appendTo, NTMesh3 append)
         {
-            MeshEditor editor = new MeshEditor(appendTo);
+            var editor = new NTMeshEditor(appendTo);
             editor.AppendMesh(append, appendTo.AllocateTriangleGroup());
         }
 

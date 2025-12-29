@@ -393,6 +393,22 @@ namespace g4
                 vertices.Add(ev.a); vertices.Add(ev.b);
             }
         }
+        public static void EdgesToVertices(NTMesh3 mesh, IEnumerable<int> edges, HashSet<int> vertices)
+        {
+            foreach (int eid in edges)
+            {
+                Index2i ev = mesh.GetEdgeV(eid);
+                vertices.Add(ev.a); vertices.Add(ev.b);
+            }
+        }
+        public static void EdgesToVertices(NTMesh3 mesh, HashSet<int> edges, HashSet<int> vertices)
+        {
+            foreach (int eid in edges)
+            {
+                Index2i ev = mesh.GetEdgeV(eid);
+                vertices.Add(ev.a); vertices.Add(ev.b);
+            }
+        }
 
     }
 
