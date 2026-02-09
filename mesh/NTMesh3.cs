@@ -6,19 +6,18 @@ using System.Security.Cryptography;
 
 namespace g4
 {
-
-	//
-	// NTMesh3 is a variant of DMesh3 that supports non-manifold mesh topology. 
-	// See DMesh3 comments for most details. 
-	// Main change is that edges buffer only stores 2-tuple vertex pairs.
-	// Each edge can be connected to arbitrary number of triangle, which are
-	// stored in edge_triangles
-	//
-	// per-vertex UVs have been removed (perhaps temporarily)
-	//
-	// Currently poke-face and split-edge are supported, but not collapse or flip.
-	// 
-	public partial class NTMesh3 : IDeformableMesh
+    //
+    // NTMesh3 is a variant of DMesh3 that supports non-manifold mesh topology. 
+    // See DMesh3 comments for most details. 
+    // Main change is that edges buffer only stores 2-tuple vertex pairs.
+    // Each edge can be connected to arbitrary number of triangle, which are
+    // stored in edge_triangles
+    //
+    // per-vertex UVs have been removed (perhaps temporarily)
+    //
+    // Currently poke-face and split-edge are supported, but not collapse or flip.
+    // 
+    public partial class NTMesh3 : IDeformableMesh
 	{
 		public const int InvalidID = -1;
 		public const int NonManifoldID = -2;
@@ -815,7 +814,7 @@ namespace g4
 				foreach (int tID in tris)
 				{
 					MeshResult result = RemoveTriangle(tID, false, bPreserveManifold);
-					if (result != MeshResult.Ok)
+                    if (result != MeshResult.Ok)
 						return result;
 				}
 			}
@@ -1639,7 +1638,6 @@ namespace g4
             return MeshResult.Ok;
         }
 
-
         public struct PokeTriangleInfo
         {
             public int new_vid;
@@ -2237,6 +2235,130 @@ namespace g4
             flip.v0 = a; flip.v1 = b;
             flip.ov0 = c; flip.ov1 = d;
             flip.t0 = t0; flip.t1 = t1;
+
+            updateTimeStamp(true);
+            return MeshResult.Ok;
+        }
+
+
+        public struct EdgeCollapseInfo
+        {
+            public int vKept;
+            public int vRemoved;
+
+            public int eCollapsed;              // edge we collapsed
+            public List<int> tRemoved;			// tris we removed (second may be invalid)
+            public List<int> eRemoved;			// edges we removed (second may be invalid)
+        }
+
+
+        public MeshResult CollapseEdge(int vKeep, int vRemove, out EdgeCollapseInfo collapse)
+        {
+            collapse = new EdgeCollapseInfo();
+			collapse.tRemoved = new List<int>();
+			collapse.eRemoved = new List<int>();
+
+            if (IsVertex(vKeep) == false || IsVertex(vRemove) == false)
+                return MeshResult.Failed_NotAnEdge;
+
+            int b = vKeep;      // renaming for sanity. We remove a and keep b
+            int a = vRemove;
+
+            int eab = find_edge(a, b);
+            if (eab == InvalidID)
+                return MeshResult.Failed_NotAnEdge;
+
+			collapse.vKept = vKeep;
+			collapse.vRemoved = vRemove;
+			collapse.eCollapsed = eab;
+
+			// 1) remove edge ab from vtx b
+			vertex_edges.Remove(b, eab);
+
+			// 2) find all edges between a and c (c != b); remove edge reference from c
+			// 3) find all triangles from a without b; for those triangles, replace a by b
+			// 4) for the edges eac without a triangle with b, replace a by b
+			var edgeNewTris = new Dictionary<int, List<int>>();
+			foreach (var eac in VtxEdgesItr(a))
+			{
+				edgeNewTris[eac] = new List<int>();
+
+				if (eac == eab)
+				{
+					continue;
+				}
+
+				var eacIndices = GetEdgeV(eac);
+				var c = IndexUtil.find_edge_other_v(eacIndices, a);
+
+                // Might not be necessary
+                if (c == b) 
+				{
+					continue;
+				}
+
+				// eac is an edge from a without b
+				vertex_edges.Remove(c, eac);
+
+				bool hasTriangleInCommon = false;
+                foreach (var tac in EdgeTrianglesItr(eac))
+				{
+					var tacIndices = GetTriangle(tac);
+					var d = IndexUtil.find_tri_other_vtx(a, c, tacIndices);
+
+					if (d == b)
+					{
+						hasTriangleInCommon = true;
+						break;
+					}
+
+					// tac is a triangle from a without b
+					replace_tri_vertex(tac, a, b);
+                    vertices_refcount.increment(b);
+                    vertices_refcount.decrement(a);
+					edgeNewTris[eac].Add(tac);
+                }
+
+                if (!hasTriangleInCommon)
+				{
+					// TODO: check if edge between b and c already exist
+                    replace_edge_vertex(eac, a, b);
+                }
+            }
+
+			vertex_edges.Clear(a);
+            vertices_refcount.decrement(a, (short)vertices_refcount.refCount(a));
+			foreach (var tab in EdgeTrianglesItr(eab))
+			{
+				var tabIndices = GetTriangle(tab);
+				var c = IndexUtil.find_tri_other_vtx(a, b, tabIndices);
+				var eac = find_edge_from_tri(a, c, tab);
+				var ebc = find_edge_from_tri(b, c, tab);
+                var tabEdges = GetTriEdges(tab);
+
+                triangles_refcount.decrement(tab);
+				vertices_refcount.decrement(b);
+				vertices_refcount.decrement(c);
+                //Debug.Assert(triangles_refcount.isValid(tab) == false);
+
+				edges_refcount.decrement(tabEdges.a);
+				edges_refcount.decrement(tabEdges.b);
+				edges_refcount.decrement(tabEdges.c);
+                //Debug.Assert(edges_refcount.isValid(tabEdges.a) == false);
+                //Debug.Assert(edges_refcount.isValid(tabEdges.b) == false);
+                //Debug.Assert(edges_refcount.isValid(tabEdges.c) == false);
+
+				remove_edge_triangle(eac, tab);
+
+				foreach (var newTri in edgeNewTris[eac])
+				{
+					add_edge_triangle(ebc, newTri);
+					replace_triangle_edge(newTri, eac, ebc);
+                }
+
+				collapse.tRemoved.Add(tab);
+                collapse.tRemoved.Add(eac);
+            }
 
             updateTimeStamp(true);
             return MeshResult.Ok;
