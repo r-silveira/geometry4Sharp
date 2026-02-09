@@ -66,7 +66,7 @@ namespace geometry4SharpTests.mesh
         #endregion
 
         [Fact]
-        public void Test1()
+        public void NTMesh3_CollapseEdge_Test1()
         {
             var mesh = TestData1();
             mesh.CollapseEdge(1, 0, out var _);
@@ -74,7 +74,7 @@ namespace geometry4SharpTests.mesh
         }
 
         [Fact]
-        public void Test2()
+        public void NTMesh3_CollapseEdge_Test2()
         {
             var mesh = TestData2();
             mesh.CollapseEdge(1, 0, out var _);
@@ -82,7 +82,7 @@ namespace geometry4SharpTests.mesh
         }
 
         [Fact]
-        public void Test3()
+        public void NTMesh3_CollapseEdge_Test3()
         {
             var mesh = TestData3();
             mesh.CollapseEdge(1, 0, out var _);

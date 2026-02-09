@@ -166,10 +166,9 @@ namespace g4
 				collapse_degenerate_edges(OnCutEdges, ZeroEdges);
 			}
 
-
-			// ok now we extract boundary loops, but restricted
-			// to either the zero-edges we found, or the edges we created! bang!!
-			Func<int, bool> CutEdgeFilterF = (eid) => {
+            // ok now we extract boundary loops, but restricted
+            // to either the zero-edges we found, or the edges we created! bang!!
+            Func<int, bool> CutEdgeFilterF = (eid) => {
 				if (OnCutEdges.Contains(eid) || ZeroEdges.Contains(eid))
 					return true;
 				return false;
