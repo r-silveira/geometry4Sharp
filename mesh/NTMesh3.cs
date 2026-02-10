@@ -2248,8 +2248,8 @@ namespace g4
             public int vRemoved;
 
             public int eCollapsed;              // edge we collapsed
-            public List<int> tRemoved;			// tris we removed (second may be invalid)
-            public List<int> eRemoved;			// edges we removed (second may be invalid)
+            public List<int> tRemoved;			// tris we removed
+            public List<int> eRemoved;			// edges we removed
         }
 
 
@@ -2344,6 +2344,7 @@ namespace g4
                         if (edge_triangles.Count(eac) == 0)
                         {
                             edges_refcount.decrement(eac);
+                            collapse.eRemoved.Add(eac);
                         }
                     }
                 }
@@ -2357,8 +2358,9 @@ namespace g4
             
 			// Removing reference to edge ab
 			edges_refcount.decrement(eab);
+            collapse.eRemoved.Add(eab);
 
-            // 5) remove all triangles containing eac
+            // 5) remove all triangles containing eab
             foreach (var tab in EdgeTrianglesItr(eab))
 			{
 				var tabIndices = GetTriangle(tab);
@@ -2368,6 +2370,8 @@ namespace g4
                 var vertices = GetTriangle(tab);
 
                 triangles_refcount.decrement(tab);
+                collapse.tRemoved.Add(tab);
+                
 				vertices_refcount.decrement(b);
 				vertices_refcount.decrement(c);
 
@@ -2376,22 +2380,21 @@ namespace g4
 				remove_edge_triangle(eac, tab);
                 remove_edge_triangle(ebc, tab);
 
-				// removing isolated edges
-				if (edge_triangles.Count(eac) == 0)
+                // removing isolated edges
+                if (edge_triangles.Count(eac) == 0)
 				{
                     edges_refcount.decrement(eac);
-				}
-				if (edge_triangles.Count(ebc) == 0)
+                    collapse.eRemoved.Add(eac);
+                }
+                if (edge_triangles.Count(ebc) == 0)
 				{
                     vertex_edges.Remove(b, ebc);
                     vertex_edges.Remove(c, ebc);
                     edges_refcount.decrement(ebc);
+                    collapse.eRemoved.Add(ebc);
                 }
 
-                collapse.tRemoved.Add(tab);
-                collapse.tRemoved.Add(eac);
-
-				// removing isolated vertices
+                // removing isolated vertices
                 if (vertices_refcount.refCount(vertices.a) == 1)
                 {
                     vertices_refcount.decrement(vertices.a);

@@ -69,8 +69,11 @@ namespace geometry4SharpTests.mesh
         public void NTMesh3_CollapseEdge_Test1()
         {
             var mesh = TestData1();
-            mesh.CollapseEdge(1, 0, out var _);
+            mesh.CollapseEdge(1, 0, out var collapseInfo);
             mesh.TriangleCount.ShouldBe(0);
+
+            collapseInfo.eRemoved.Count.ShouldBe(5);
+            collapseInfo.tRemoved.Count.ShouldBe(2);
 
             var vertexIndices = mesh.VertexIndices().ToList();
             var edgeIndices = mesh.EdgeIndices().ToList();
@@ -87,8 +90,11 @@ namespace geometry4SharpTests.mesh
         public void NTMesh3_CollapseEdge_Test2()
         {
             var mesh = TestData2();
-            mesh.CollapseEdge(1, 0, out var _);
+            mesh.CollapseEdge(1, 0, out var collapseInfo);
             mesh.TriangleCount.ShouldBe(1);
+
+            collapseInfo.eRemoved.Count.ShouldBe(4);
+            collapseInfo.tRemoved.Count.ShouldBe(2);
 
             var vertexIndices = mesh.VertexIndices().ToList();
             var edgeIndices = mesh.EdgeIndices().ToList();
@@ -135,15 +141,18 @@ namespace geometry4SharpTests.mesh
             trianglesE1.Contains(2);
             trianglesE2.Contains(2);
 
-            mesh.CheckValidity(FailMode.Throw).ShouldBe(true);
+            mesh.CheckValidity(FailMode.ReturnOnly).ShouldBe(true);
         }
 
         [Fact]
         public void NTMesh3_CollapseEdge_Test3()
         {
             var mesh = TestData3();
-            mesh.CollapseEdge(1, 0, out var _);
+            mesh.CollapseEdge(1, 0, out var collapseInfo);
             mesh.TriangleCount.ShouldBe(3);
+
+            collapseInfo.eRemoved.Count.ShouldBe(5);
+            collapseInfo.tRemoved.Count.ShouldBe(2);
 
             var vertexIndices = mesh.VertexIndices().ToList();
             var edgeIndices = mesh.EdgeIndices().ToList();

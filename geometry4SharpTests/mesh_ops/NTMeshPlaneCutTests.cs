@@ -63,6 +63,8 @@ namespace geometry4SharpTests.mesh_ops
             var planeCut = new NTMeshPlaneCut(mesh, planeCenter, planeNormal);
             planeCut.Cut();
 
+            mesh.CheckValidity(FailMode.ReturnOnly).ShouldBe(true);
+
             var totalArea = mesh
                 .TriangleIndices()
                 .Sum(mesh.GetTriArea);
@@ -92,6 +94,8 @@ namespace geometry4SharpTests.mesh_ops
             var planeCut = new NTMeshPlaneCut(mesh, planeCenter, planeNormal);
             planeCut.Cut();
             planeCut.FillHoles();
+
+            mesh.CheckValidity(FailMode.ReturnOnly).ShouldBe(true);
 
             var totalArea = mesh
                 .TriangleIndices()
