@@ -41,4 +41,11 @@
     <None Include="LICENSE" Pack="true" PackagePath="LICENSE.txt" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>geometry4SharpTests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

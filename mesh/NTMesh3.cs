@@ -6,18 +6,18 @@ using System.Security.Cryptography;
 
 namespace g4
 {
-    //
-    // NTMesh3 is a variant of DMesh3 that supports non-manifold mesh topology. 
-    // See DMesh3 comments for most details. 
-    // Main change is that edges buffer only stores 2-tuple vertex pairs.
-    // Each edge can be connected to arbitrary number of triangle, which are
-    // stored in edge_triangles
-    //
-    // per-vertex UVs have been removed (perhaps temporarily)
-    //
-    // Currently poke-face and split-edge are supported, but not collapse or flip.
-    // 
-    public partial class NTMesh3 : IDeformableMesh
+	//
+	// NTMesh3 is a variant of DMesh3 that supports non-manifold mesh topology. 
+	// See DMesh3 comments for most details. 
+	// Main change is that edges buffer only stores 2-tuple vertex pairs.
+	// Each edge can be connected to arbitrary number of triangle, which are
+	// stored in edge_triangles
+	//
+	// per-vertex UVs have been removed (perhaps temporarily)
+	//
+	// Currently poke-face and split-edge are supported, but not collapse or flip.
+	// 
+	public partial class NTMesh3 : IDeformableMesh
 	{
 		public const int InvalidID = -1;
 		public const int NonManifoldID = -2;
@@ -26,24 +26,25 @@ namespace g4
 		public static readonly Index3i InvalidTriangle = new Index3i(InvalidID, InvalidID, InvalidID);
 		public static readonly Index2i InvalidEdge = new Index2i(InvalidID, InvalidID);
 
-		RefCountVector vertices_refcount;
 		DVector<double> vertices;
 		DVector<float> normals;
 		DVector<float> colors;
 
-		SmallListSet vertex_edges;
-
-		RefCountVector triangles_refcount;
 		DVector<int> triangles;
-		DVector<int> triangle_edges;
-		DVector<int> triangle_groups;
+        DVector<int> edges;
+        DVector<int> triangle_groups;
         DVector<int> vertex_groups;
 
-        RefCountVector edges_refcount;
-		DVector<int> edges;
-		SmallListSet edge_triangles;
 
-		int timestamp = 0;
+        internal SmallListSet vertex_edges;
+        internal SmallListSet edge_triangles;
+        internal DVector<int> triangle_edges;
+
+        internal RefCountVector vertices_refcount;
+        internal RefCountVector triangles_refcount;
+        internal RefCountVector edges_refcount;
+
+        int timestamp = 0;
 		int shape_timestamp = 0;
 
 		int max_group_id = 0;
@@ -2307,10 +2308,13 @@ namespace g4
 					}
 
                     // 3) tac is a triangle from a without b
-                    replace_tri_vertex(tac, a, b);
-                    vertices_refcount.increment(b);
-                    vertices_refcount.decrement(a);
-					eacTrisWithoutB.Add(tac);
+                    if (replace_tri_vertex(tac, a, b) != -1)
+					{
+                        vertices_refcount.increment(b);
+                        vertices_refcount.decrement(a);
+                    }
+
+                    eacTrisWithoutB.Add(tac);
                 }
 
                 if (eacTrisWithoutB.Count > 0)
@@ -2331,6 +2335,15 @@ namespace g4
                         {
                             add_edge_triangle(ebc, tac);
                             replace_triangle_edge(tac, eac, ebc);
+							remove_edge_triangle(eac, tac);
+                        }
+
+						// Removing eac if it is isolated
+						// It might not be, if there is an abc triangle
+						vertex_edges.Remove(c, eac);
+                        if (edge_triangles.Count(eac) == 0)
+                        {
+                            edges_refcount.decrement(eac);
                         }
                     }
                 }
@@ -2341,29 +2354,61 @@ namespace g4
 			{
                 vertices_refcount.decrement(a, (short)vertices_refcount.refCount(a));
             }
+            
+			// Removing reference to edge ab
+			edges_refcount.decrement(eab);
 
-			// 5) remove all triangles containing eac
+            // 5) remove all triangles containing eac
             foreach (var tab in EdgeTrianglesItr(eab))
 			{
 				var tabIndices = GetTriangle(tab);
 				var c = IndexUtil.find_tri_other_vtx(a, b, tabIndices);
 				var eac = find_edge_from_tri(a, c, tab);
                 var ebc = find_edge_from_tri(b, c, tab);
+                var vertices = GetTriangle(tab);
 
                 triangles_refcount.decrement(tab);
 				vertices_refcount.decrement(b);
 				vertices_refcount.decrement(c);
-
-				edges_refcount.decrement(eab);
-				edges_refcount.decrement(eac);
 
 				vertex_edges.Remove(c, eac);
 
 				remove_edge_triangle(eac, tab);
                 remove_edge_triangle(ebc, tab);
 
-				collapse.tRemoved.Add(tab);
+				// removing isolated edges
+				if (edge_triangles.Count(eac) == 0)
+				{
+                    edges_refcount.decrement(eac);
+				}
+				if (edge_triangles.Count(ebc) == 0)
+				{
+                    vertex_edges.Remove(b, ebc);
+                    vertex_edges.Remove(c, ebc);
+                    edges_refcount.decrement(ebc);
+                }
+
+                collapse.tRemoved.Add(tab);
                 collapse.tRemoved.Add(eac);
+
+				// removing isolated vertices
+                if (vertices_refcount.refCount(vertices.a) == 1)
+                {
+                    vertices_refcount.decrement(vertices.a);
+                    vertex_edges.Clear(vertices.a);
+                }
+
+                if (vertices_refcount.refCount(vertices.b) == 1)
+                {
+                    vertices_refcount.decrement(vertices.b);
+                    vertex_edges.Clear(vertices.b);
+                }
+
+                if (vertices_refcount.refCount(vertices.c) == 1)
+                {
+                    vertices_refcount.decrement(vertices.c);
+                    vertex_edges.Clear(vertices.c);
+                }
             }
 
             updateTimeStamp(true);
