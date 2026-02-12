@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 
 namespace g4
 {
@@ -31,13 +32,13 @@ namespace g4
 		public Vector3d PlaneOrigin;
 		public Vector3d PlaneNormal;
 
-        // a plane cut very near a vertex can result in degenerate edges on the open loops/spans, which 
-        // can cause problems downstream (eg if hole-filling). It is easy for us to collapse these before
-        // we construct the loops.
-        //public bool CollapseDegenerateEdgesOnCut = true;
+		// a plane cut very near a vertex can result in degenerate edges on the open loops/spans, which 
+		// can cause problems downstream (eg if hole-filling). It is easy for us to collapse these before
+		// we construct the loops.
+		public bool CollapseDegenerateEdgesOnCut = true;
 
-        // the min-edge-length if we are collapsing degenerate edges
-        public double DegenerateEdgeTol = MathUtil.ZeroTolerancef;
+		// the min-edge-length if we are collapsing degenerate edges
+		public double DegenerateEdgeTol = MathUtil.ZeroTolerancef;
 
         // if non-null, we will only iterate through these edges
 		//public NTMeshFaceSelection CutFaceSet = null;
@@ -132,7 +133,7 @@ namespace g4
 
 				NTMesh3.EdgeSplitInfo splitInfo;
 				MeshResult result = Mesh.SplitEdge(eid, out splitInfo);
-				if (result != MeshResult.Ok) {
+                if (result != MeshResult.Ok) {
 					throw new Exception("MeshPlaneCut.Cut: failed in SplitEdge");
 					//return false;
 				}
@@ -160,14 +161,14 @@ namespace g4
 			}
 
             // collapse degenerate edges if we got em
-            //if (CollapseDegenerateEdgesOnCut) {
-            //    collapse_degenerate_edges(OnCutEdges, ZeroEdges);
-            //}
+            if (CollapseDegenerateEdgesOnCut)
+			{
+				collapse_degenerate_edges(OnCutEdges, ZeroEdges);
+			}
 
-
-			// ok now we extract boundary loops, but restricted
-			// to either the zero-edges we found, or the edges we created! bang!!
-			Func<int, bool> CutEdgeFilterF = (eid) => {
+            // ok now we extract boundary loops, but restricted
+            // to either the zero-edges we found, or the edges we created! bang!!
+            Func<int, bool> CutEdgeFilterF = (eid) => {
 				if (OnCutEdges.Contains(eid) || ZeroEdges.Contains(eid))
 					return true;
 				return false;
@@ -191,45 +192,47 @@ namespace g4
 
 		} // Cut()
 
-		//protected void collapse_degenerate_edges(HashSet<int> OnCutEdges, HashSet<int> ZeroEdges)
-		//{
-		//    HashSet<int>[] sets = new HashSet<int>[2] { OnCutEdges, ZeroEdges };
+		protected void collapse_degenerate_edges(HashSet<int> OnCutEdges, HashSet<int> ZeroEdges)
+		{
+			HashSet<int>[] sets = new HashSet<int>[2] { OnCutEdges, ZeroEdges };
 
-		//    double tol2 = DegenerateEdgeTol * DegenerateEdgeTol;
-		//    Vector3d a = Vector3d.Zero, b = Vector3d.Zero;
-		//    int collapsed = 0;
-		//    do {
-		//        collapsed = 0;
-		//        foreach (var edge_set in sets) {
-		//            foreach (int eid in edge_set) {
-		//                if (Mesh.IsEdge(eid) == false)
-		//                    continue;
-		//                Mesh.GetEdgeV(eid, ref a, ref b);
-		//                if (a.DistanceSquared(b) > tol2)
-		//                    continue;
+			double tol2 = DegenerateEdgeTol * DegenerateEdgeTol;
+			Vector3d a = Vector3d.Zero, b = Vector3d.Zero;
+			int collapsed = 0;
+			do
+			{
+				collapsed = 0;
+				foreach (var edge_set in sets)
+				{
+					foreach (int eid in edge_set)
+					{
+						if (Mesh.IsEdge(eid) == false)
+							continue;
+						Mesh.GetEdgeV(eid, ref a, ref b);
+						if (a.DistanceSquared(b) > tol2)
+							continue;
 
-		//                Index2i ev = Mesh.GetEdgeV(eid);
-		//                DMesh3.EdgeCollapseInfo collapseInfo;
-		//                MeshResult result = Mesh.CollapseEdge(ev.a, ev.b, out collapseInfo);
-		//                if (result == MeshResult.Ok)
-		//                    collapsed++;
-		//            }
-		//        }
-		//    } while (collapsed != 0);
-		//}
+						Index2i ev = Mesh.GetEdgeV(eid);
+						NTMesh3.EdgeCollapseInfo collapseInfo;
+						MeshResult result = Mesh.CollapseEdge(ev.a, ev.b, out collapseInfo);
+						if (result == MeshResult.Ok)
+							collapsed++;
+					}
+				}
+			} while (collapsed != 0);
+		}
 
 		/// <summary>
 		/// A quick-and-dirty hole filling. If you want something better,
 		/// process the returned CutLoops yourself.
 		/// </summary>
-		[Obsolete("Degenerate edges collapsing has not been implemented yet; FillHoles results may be incorrect.")]
 		public bool FillHoles(int constantGroupID = -1)
 		{
 			bool bAllOk = true;
 
 			LoopFillTriangles = new List<int[]>(CutLoops.Count);
 
-			foreach ( var loop in CutLoops) {
+            foreach ( var loop in CutLoops) {
 				var filler = new NTSimpleHoleFiller(Mesh, loop);
 				int gid = (constantGroupID >= 0) ? constantGroupID : Mesh.AllocateTriangleGroup();
 				if ( filler.Fill(gid) ) {

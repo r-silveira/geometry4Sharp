@@ -63,6 +63,40 @@ namespace geometry4SharpTests.mesh_ops
             var planeCut = new NTMeshPlaneCut(mesh, planeCenter, planeNormal);
             planeCut.Cut();
 
+            mesh.CheckValidity(FailMode.ReturnOnly).ShouldBe(true);
+
+            var totalArea = mesh
+                .TriangleIndices()
+                .Sum(mesh.GetTriArea);
+
+            totalArea.ShouldBe(expectedTotalArea, EPS);
+        }
+
+        [Theory]
+        [InlineData(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 16.0)]                            // Splitting cube in half (y-axis)
+        [InlineData(0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 24.0)]                            // Plane is coplanar with top face (same normal as face)
+        [InlineData(0.0, 1.0001, 0.0, 0.0, 1.0, 0.0, 24.0)]                         // Cube is entirely behind the plane
+        [InlineData(0.0, 0.9999999, 0.0, 0.0, 1.0, 0.0, 24.0)]                      // "Only" top face is in front of the plane
+        [InlineData(0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 8.0)]                            // Plane is coplanar with bottom face (opposite normal as face)
+        [InlineData(0.0, -1.0001, 0.0, 0.0, 1.0, 0.0, 0.0)]                         // Cube is entirely in front of the plane
+        [InlineData(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 16.0)]                            // Splitting cube in half (x-axis)
+        [InlineData(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 16.0)]                            // Splitting cube in half (z-axis)
+        [InlineData(0.1, 0.1, 0.1, 0.57735027, 0.57735027, 0.57735027, 18.84)]       // Splitting cube with displaced/rotated plane
+        public void NTMeshPlaneCut_CutAndFillHoles_Cube(double cx, double cy, double cz,
+            double nx, double ny, double nz, double expectedTotalArea)
+        {
+            const double EPS = 1e-3;
+            var mesh = CreateCube();
+
+            var planeCenter = new Vector3d(cx, cy, cz);
+            var planeNormal = new Vector3d(nx, ny, nz).Normalized;
+
+            var planeCut = new NTMeshPlaneCut(mesh, planeCenter, planeNormal);
+            planeCut.Cut();
+            planeCut.FillHoles();
+
+            mesh.CheckValidity(FailMode.ReturnOnly).ShouldBe(true);
+
             var totalArea = mesh
                 .TriangleIndices()
                 .Sum(mesh.GetTriArea);

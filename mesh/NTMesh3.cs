@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 
 namespace g4
 {
-
 	//
 	// NTMesh3 is a variant of DMesh3 that supports non-manifold mesh topology. 
 	// See DMesh3 comments for most details. 
@@ -27,24 +26,25 @@ namespace g4
 		public static readonly Index3i InvalidTriangle = new Index3i(InvalidID, InvalidID, InvalidID);
 		public static readonly Index2i InvalidEdge = new Index2i(InvalidID, InvalidID);
 
-		RefCountVector vertices_refcount;
 		DVector<double> vertices;
 		DVector<float> normals;
 		DVector<float> colors;
 
-		SmallListSet vertex_edges;
-
-		RefCountVector triangles_refcount;
 		DVector<int> triangles;
-		DVector<int> triangle_edges;
-		DVector<int> triangle_groups;
+        DVector<int> edges;
+        DVector<int> triangle_groups;
         DVector<int> vertex_groups;
 
-        RefCountVector edges_refcount;
-		DVector<int> edges;
-		SmallListSet edge_triangles;
 
-		int timestamp = 0;
+        internal SmallListSet vertex_edges;
+        internal SmallListSet edge_triangles;
+        internal DVector<int> triangle_edges;
+
+        internal RefCountVector vertices_refcount;
+        internal RefCountVector triangles_refcount;
+        internal RefCountVector edges_refcount;
+
+        int timestamp = 0;
 		int shape_timestamp = 0;
 
 		int max_group_id = 0;
@@ -815,7 +815,7 @@ namespace g4
 				foreach (int tID in tris)
 				{
 					MeshResult result = RemoveTriangle(tID, false, bPreserveManifold);
-					if (result != MeshResult.Ok)
+                    if (result != MeshResult.Ok)
 						return result;
 				}
 			}
@@ -998,8 +998,8 @@ namespace g4
 		{
 			if ( vertices_refcount.isValid(vID) ) {
 				var result = new List<int>();
-				foreach (int eid in vertex_edges.ValueItr(vID)) {
-					if (edge_triangles.Count(eid) == 1)
+                foreach (int eid in vertex_edges.ValueItr(vID)) {
+                    if (edge_triangles.Count(eid) == 1)
 						result.Add(eid);
 				}
 				return result;
@@ -1555,7 +1555,7 @@ namespace g4
             // look up primary edge & triangle
             int eab_i = 2 * eab;
             int a = edges[eab_i], b = edges[eab_i + 1];
-
+			
             List<int> triangles = new List<int>(edge_triangles.ValueItr(eab));
             if (triangles.Count < 1)
                 return MeshResult.Failed_BrokenTopology;
@@ -1638,7 +1638,6 @@ namespace g4
             updateTimeStamp(true);
             return MeshResult.Ok;
         }
-
 
         public struct PokeTriangleInfo
         {
@@ -2243,6 +2242,183 @@ namespace g4
         }
 
 
+        public struct EdgeCollapseInfo
+        {
+            public int vKept;
+            public int vRemoved;
+
+            public int eCollapsed;              // edge we collapsed
+            public List<int> tRemoved;			// tris we removed
+            public List<int> eRemoved;			// edges we removed
+        }
+
+
+        public MeshResult CollapseEdge(int vKeep, int vRemove, out EdgeCollapseInfo collapse)
+        {
+            collapse = new EdgeCollapseInfo();
+			collapse.tRemoved = new List<int>();
+			collapse.eRemoved = new List<int>();
+
+            if (IsVertex(vKeep) == false || IsVertex(vRemove) == false)
+                return MeshResult.Failed_NotAnEdge;
+
+            int b = vKeep;      // renaming for sanity. We remove a and keep b
+            int a = vRemove;
+
+            int eab = find_edge(a, b);
+            if (eab == InvalidID)
+                return MeshResult.Failed_NotAnEdge;
+
+			collapse.vKept = vKeep;
+			collapse.vRemoved = vRemove;
+			collapse.eCollapsed = eab;
+
+			// 1) remove edge ab from vtx b
+			vertex_edges.Remove(b, eab);
+
+			// 2) find all edges between a and c (c != b)
+			// 3) find all triangles from a without b; for those triangles, replace a by b
+			// 4) for the edges eac with a triangle without b, replace a by b
+            foreach (var eac in VtxEdgesItr(a))
+			{
+				if (eac == eab)
+				{
+					continue;
+				}
+
+				var eacIndices = GetEdgeV(eac);
+				var c = IndexUtil.find_edge_other_v(eacIndices, a);
+
+                // Might not be necessary
+                if (c == b) 
+				{
+					continue;
+				}
+
+				// 2) eac is an edge from a without b
+				var eacTrisWithoutB = new List<int>();
+                foreach (var tac in EdgeTrianglesItr(eac))
+				{
+					var tacIndices = GetTriangle(tac);
+					var d = IndexUtil.find_tri_other_vtx(a, c, tacIndices);
+
+					if (d == b)
+					{
+						continue;
+					}
+
+                    // 3) tac is a triangle from a without b
+                    if (replace_tri_vertex(tac, a, b) != -1)
+					{
+                        vertices_refcount.increment(b);
+                        vertices_refcount.decrement(a);
+                    }
+
+                    eacTrisWithoutB.Add(tac);
+                }
+
+                if (eacTrisWithoutB.Count > 0)
+				{
+					// 4) eac has a triangle without b
+					var ebc = find_edge(b, c);
+					if (ebc == InvalidID)
+					{
+						// No existing edge between b and c; eac becomes ebc
+                        replace_edge_vertex(eac, a, b);
+                        vertex_edges.Insert(b, eac);
+                    }
+					else
+					{
+						// There is an existing edge between b and c, so we add all triangles
+						// without b to it and replace eac by ebc in them
+                        foreach (var tac in eacTrisWithoutB)
+                        {
+                            add_edge_triangle(ebc, tac);
+                            replace_triangle_edge(tac, eac, ebc);
+							remove_edge_triangle(eac, tac);
+                        }
+
+						// Removing eac if it is isolated
+						// It might not be, if there is an abc triangle
+						vertex_edges.Remove(c, eac);
+                        if (edge_triangles.Count(eac) == 0)
+                        {
+                            edges_refcount.decrement(eac);
+                            collapse.eRemoved.Add(eac);
+                        }
+                    }
+                }
+            }
+
+			vertex_edges.Clear(a);
+			if (vertices_refcount.refCount(a) > 0)	// This might always be zero here
+			{
+                vertices_refcount.decrement(a, (short)vertices_refcount.refCount(a));
+            }
+            
+			// Removing reference to edge ab
+			edges_refcount.decrement(eab);
+            collapse.eRemoved.Add(eab);
+
+            // 5) remove all triangles containing eab
+            foreach (var tab in EdgeTrianglesItr(eab))
+			{
+				var tabIndices = GetTriangle(tab);
+				var c = IndexUtil.find_tri_other_vtx(a, b, tabIndices);
+				var eac = find_edge_from_tri(a, c, tab);
+                var ebc = find_edge_from_tri(b, c, tab);
+                var vertices = GetTriangle(tab);
+
+                triangles_refcount.decrement(tab);
+                collapse.tRemoved.Add(tab);
+                
+				vertices_refcount.decrement(b);
+				vertices_refcount.decrement(c);
+
+				vertex_edges.Remove(c, eac);
+
+				remove_edge_triangle(eac, tab);
+                remove_edge_triangle(ebc, tab);
+
+                // removing isolated edges
+                if (edge_triangles.Count(eac) == 0)
+				{
+                    edges_refcount.decrement(eac);
+                    collapse.eRemoved.Add(eac);
+                }
+                if (edge_triangles.Count(ebc) == 0)
+				{
+                    vertex_edges.Remove(b, ebc);
+                    vertex_edges.Remove(c, ebc);
+                    edges_refcount.decrement(ebc);
+                    collapse.eRemoved.Add(ebc);
+                }
+
+                // removing isolated vertices
+                if (vertices_refcount.refCount(vertices.a) == 1)
+                {
+                    vertices_refcount.decrement(vertices.a);
+                    vertex_edges.Clear(vertices.a);
+                }
+
+                if (vertices_refcount.refCount(vertices.b) == 1)
+                {
+                    vertices_refcount.decrement(vertices.b);
+                    vertex_edges.Clear(vertices.b);
+                }
+
+                if (vertices_refcount.refCount(vertices.c) == 1)
+                {
+                    vertices_refcount.decrement(vertices.c);
+                    vertex_edges.Clear(vertices.c);
+                }
+            }
+
+            updateTimeStamp(true);
+            return MeshResult.Ok;
+        }
+
+
         // ======================================= internal =======================================
 
         void set_triangle(int tid, int v0, int v1, int v2)
@@ -2572,6 +2748,6 @@ namespace g4
 			edge_triangles.Insert(eID, t0);
 			edge_triangles.Insert(eID, t1);
 		}
-	}
+    }
 }
 
