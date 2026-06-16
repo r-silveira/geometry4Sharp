@@ -18,7 +18,7 @@ namespace g4
         /// <summary>
         /// Find id of triangle intersected by ray, where intersection point is within distance fMaxDist, or return DMesh3.InvalidID if not found
         /// </summary>
-        int FindNearestHitTriangle(Ray3d ray, double fMaxDist = double.MaxValue);
+        int FindNearestHitTriangle(Ray3d ray, double fMaxDist = double.MaxValue, bool handleCoplanarRays = false);
 
         bool SupportsPointContainment { get; }
 

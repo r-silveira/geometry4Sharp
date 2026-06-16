@@ -48,7 +48,8 @@ namespace g4
 
         public bool SupportsTriangleRayIntersection { get { return true; } }
 
-        public int FindNearestHitTriangle(Ray3d ray, double fMaxDist = double.MaxValue)
+        // Not handling coplanar rays here
+        public int FindNearestHitTriangle(Ray3d ray, double fMaxDist = double.MaxValue, bool handleCoplanarRays = false)
         {
             var save_filter = SourceSpatial.TriangleFilterF;
             SourceSpatial.TriangleFilterF = source_filter;
