@@ -488,7 +488,127 @@ namespace g4
             return hit_count;
         }
 
+        /// <summary>
+        /// BEAM TRACING: Find the nearest triangle that comes within 'radius' of the ray, 
+        /// within distance fMaxDist. Conceptually casts a capsule/cylinder along the ray.
+        /// </summary>
+        public virtual int FindNearestBeamHitTriangle(Ray3d ray, double radius, double fMaxDist = double.MaxValue)
+        {
+            if (mesh_timestamp != mesh.ShapeTimestamp)
+                throw new Exception("NTMeshAABBTree3.FindNearestBeamHitTriangle: mesh has been modified");
+            if (ray.Direction.IsNormalized == false)
+                throw new Exception("NTMeshAABBTree3.FindNearestBeamHitTriangle: ray direction is not normalized");
 
+            double fNearestT = (fMaxDist < double.MaxValue) ? fMaxDist : float.MaxValue;
+            int tNearID = DMesh3.InvalidID;
+
+            find_beam_hit_triangle(root_index, ref ray, radius, ref fNearestT, ref tNearID);
+
+            return tNearID;
+        }
+
+        protected void find_beam_hit_triangle(int iBox, ref Ray3d ray, double radius, ref double fNearestT, ref int tID)
+        {
+            int idx = box_to_index[iBox];
+            if (idx < triangles_end)
+            {
+                // Base Case: Test triangles inside this BVH leaf
+                Triangle3d tri = new Triangle3d();
+                int num_tris = index_list[idx];
+                for (int i = 1; i <= num_tris; ++i)
+                {
+                    int ti = index_list[idx + i];
+                    if (TriangleFilterF != null && TriangleFilterF(ti) == false)
+                        continue;
+
+                    mesh.GetTriVertices(ti, ref tri.V0, ref tri.V1, ref tri.V2);
+
+                    // Calculate the exact distance between the infinite ray and the triangle
+                    DistRay3Triangle3 distQuery = new DistRay3Triangle3(ray, tri);
+                    double distSqr = distQuery.GetSquared();
+
+                    // If the distance is smaller than the beam radius, it's a hit!
+                    if (distSqr <= radius * radius)
+                    {
+                        double rayt = distQuery.RayParameter;
+
+                        // Ignore hits that are strictly behind the ray origin
+                        if (rayt > -radius && rayt < fNearestT)
+                        {
+                            fNearestT = rayt;
+                            tID = ti;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Internal Node: Test expanded child boxes
+                double e = MathUtil.ZeroTolerancef;
+
+                int iChild1 = index_list[idx];
+                if (iChild1 < 0)
+                {
+                    // 1 child
+                    iChild1 = (-iChild1) - 1;
+                    double fChild1T = box_beam_intersect_t(iChild1, ray, radius);
+                    if (fChild1T <= fNearestT + e)
+                        find_beam_hit_triangle(iChild1, ref ray, radius, ref fNearestT, ref tID);
+                }
+                else
+                {
+                    // 2 children, descend into the closest box first to maximize early-outs
+                    iChild1 = iChild1 - 1;
+                    int iChild2 = index_list[idx + 1] - 1;
+
+                    double fChild1T = box_beam_intersect_t(iChild1, ray, radius);
+                    double fChild2T = box_beam_intersect_t(iChild2, ray, radius);
+
+                    if (fChild1T < fChild2T)
+                    {
+                        if (fChild1T <= fNearestT + e)
+                        {
+                            find_beam_hit_triangle(iChild1, ref ray, radius, ref fNearestT, ref tID);
+                            if (fChild2T <= fNearestT + e)
+                                find_beam_hit_triangle(iChild2, ref ray, radius, ref fNearestT, ref tID);
+                        }
+                    }
+                    else
+                    {
+                        if (fChild2T <= fNearestT + e)
+                        {
+                            find_beam_hit_triangle(iChild2, ref ray, radius, ref fNearestT, ref tID);
+                            if (fChild1T <= fNearestT + e)
+                                find_beam_hit_triangle(iChild1, ref ray, radius, ref fNearestT, ref tID);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Helper: Tests intersection against an AABB that has been expanded by the beam's radius
+        protected double box_beam_intersect_t(int iBox, Ray3d ray, double radius)
+        {
+            Vector3d c = (Vector3d)box_centers[iBox];
+            Vector3f e = box_extents[iBox];
+
+            // Expand the bounds in all directions by the beam radius.
+            // Note: This results in a slightly "blocky" conservative check (AABB expansion rather than strict sphere expansion), 
+            // but it is incredibly fast and perfectly safe for BVH culling.
+            AxisAlignedBox3d expanded_box = new AxisAlignedBox3d(
+                ref c,
+                e.x + box_eps + radius,
+                e.y + box_eps + radius,
+                e.z + box_eps + radius
+            );
+
+            double ray_t;
+            if (IntrRay3AxisAlignedBox3.FindRayIntersectT(ref ray, ref expanded_box, out ray_t))
+            {
+                return ray_t;
+            }
+            return double.MaxValue;
+        }
 
 
         /// <summary>
