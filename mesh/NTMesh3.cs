@@ -46,6 +46,7 @@ namespace g4
 
         int timestamp = 0;
 		int shape_timestamp = 0;
+		int normal_timestamp = -1;
 
 		int max_group_id = 0;
 		int max_vertex_group_id = 0;
@@ -325,11 +326,12 @@ namespace g4
 
 		public int Timestamp { get { return timestamp; } }
 		public int ShapeTimestamp { get { return shape_timestamp; } }
+        public int NormalTimestamp { get { return normal_timestamp; } }
 
 
-		// IMesh impl
+        // IMesh impl
 
-		public int VertexCount { get { return vertices_refcount.count; } }
+        public int VertexCount { get { return vertices_refcount.count; } }
 		public int TriangleCount { get { return triangles_refcount.count; } }
 		public int EdgeCount { get { return edges_refcount.count; } }
 
@@ -358,6 +360,11 @@ namespace g4
 
 		public void ComputeNormals(bool bApplyAreaWeighting)
 		{
+			if (normal_timestamp == timestamp)
+			{
+				return;
+			}
+
 			if (bApplyAreaWeighting)
 			{
 				ComputeNormalsAreaWeighted();
@@ -366,6 +373,8 @@ namespace g4
 			{
 				ComputeNormalsSimpleAverage();
 			}
+
+			normal_timestamp = timestamp;
 		}
 
 		// Calculates the normal of each vertex as the average of the normals
