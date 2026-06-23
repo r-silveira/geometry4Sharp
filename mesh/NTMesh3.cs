@@ -358,7 +358,7 @@ namespace g4
 			}
 		}
 
-		public void ComputeNormals(bool bApplyAreaWeighting)
+		public void ComputeNormals(bool bApplyAreaWeighting = true)
 		{
 			if (normal_timestamp == timestamp)
 			{

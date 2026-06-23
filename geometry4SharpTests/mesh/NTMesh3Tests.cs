@@ -63,6 +63,39 @@ namespace geometry4SharpTests.mesh
             return mesh;
         }
 
+        private static NTMesh3 CreateCube()
+        {
+            var mesh = new NTMesh3();
+
+            var v0 = mesh.AppendVertex(new Vector3d(-1.0, 1.0, -1.0));
+            var v1 = mesh.AppendVertex(new Vector3d(-1.0, 1.0, 1.0));
+            var v2 = mesh.AppendVertex(new Vector3d(1.0, 1.0, -1.0));
+            var v3 = mesh.AppendVertex(new Vector3d(1.0, 1.0, 1.0));
+
+            var v4 = mesh.AppendVertex(new Vector3d(-1.0, -1.0, -1.0));
+            var v5 = mesh.AppendVertex(new Vector3d(-1.0, -1.0, 1.0));
+            var v6 = mesh.AppendVertex(new Vector3d(1.0, -1.0, -1.0));
+            var v7 = mesh.AppendVertex(new Vector3d(1.0, -1.0, 1.0));
+
+            mesh.AppendTriangle(v3, v2, v0);
+            mesh.AppendTriangle(v0, v1, v3);
+            mesh.AppendTriangle(v4, v6, v7);
+            mesh.AppendTriangle(v7, v5, v4);
+
+            mesh.AppendTriangle(v6, v2, v3);
+            mesh.AppendTriangle(v3, v7, v6);
+            mesh.AppendTriangle(v1, v0, v4);
+            mesh.AppendTriangle(v4, v5, v1);
+
+            mesh.AppendTriangle(v5, v7, v3);
+            mesh.AppendTriangle(v3, v1, v5);
+            mesh.AppendTriangle(v2, v6, v4);
+            mesh.AppendTriangle(v4, v0, v2);
+
+            return mesh;
+        }
+
+
         #endregion
 
         [Fact]
@@ -236,6 +269,31 @@ namespace geometry4SharpTests.mesh
             trianglesE7.Contains(4);
 
             mesh.CheckValidity(FailMode.ReturnOnly).ShouldBe(true);
+        }
+
+        [Fact]
+        public void NTMesh3_ComputeNormals_NormalsShouldHaveExpectedValue()
+        {
+            var mesh = CreateCube();
+            mesh.ComputeNormals();
+
+            var n0 = new Vector3f(-0.40824828, 0.81649655, -0.40824828);
+            var n1 = new Vector3f(-0.81649655, 0.40824828, 0.40824828);
+            var n2 = new Vector3f(0.40824828, 0.40824828, -0.81649655);
+            var n3 = new Vector3f(0.57735026, 0.57735026, 0.57735026);
+            var n4 = new Vector3f(-0.57735026, -0.57735026, -0.57735026);
+            var n5 = new Vector3f(-0.40824828, -0.40824828, 0.81649655);
+            var n6 = new Vector3f(0.81649655, -0.40824828, -0.40824828);
+            var n7 = new Vector3f(0.40824828, -0.81649655, 0.40824828);
+
+            mesh.GetVertexNormal(0).Distance(n0).ShouldBe(0.0f, 1e-6f);
+            mesh.GetVertexNormal(1).Distance(n1).ShouldBe(0.0f, 1e-6f);
+            mesh.GetVertexNormal(2).Distance(n2).ShouldBe(0.0f, 1e-6f);
+            mesh.GetVertexNormal(3).Distance(n3).ShouldBe(0.0f, 1e-6f);
+            mesh.GetVertexNormal(4).Distance(n4).ShouldBe(0.0f, 1e-6f);
+            mesh.GetVertexNormal(5).Distance(n5).ShouldBe(0.0f, 1e-6f);
+            mesh.GetVertexNormal(6).Distance(n6).ShouldBe(0.0f, 1e-6f);
+            mesh.GetVertexNormal(7).Distance(n7).ShouldBe(0.0f, 1e-6f);
         }
     }
 }
