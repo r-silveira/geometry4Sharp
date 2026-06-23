@@ -26,11 +26,11 @@ namespace g4
 		public static readonly Index3i InvalidTriangle = new Index3i(InvalidID, InvalidID, InvalidID);
 		public static readonly Index2i InvalidEdge = new Index2i(InvalidID, InvalidID);
 
-		DVector<double> vertices;
-		DVector<float> normals;
-		DVector<float> colors;
+		protected DVector<double> vertices;
+		protected DVector<float> normals;
+		protected DVector<float> colors;
 
-		DVector<int> triangles;
+		protected DVector<int> triangles;
         DVector<int> edges;
         DVector<int> triangle_groups;
         DVector<int> vertex_groups;
@@ -46,6 +46,7 @@ namespace g4
 
         int timestamp = 0;
 		int shape_timestamp = 0;
+		int normal_timestamp = -1;
 
 		int max_group_id = 0;
 		int max_vertex_group_id = 0;
@@ -118,11 +119,11 @@ namespace g4
 
 
 		public NTMesh3(NTMesh3 copy) {
-			Copy(copy, true, true);
+			Copy(copy, copy.HasVertexNormals, copy.HasVertexColors);
 		}
 
 
-		public void Copy(NTMesh3 copy, bool bNormals = true, bool bColors = true)
+		public void Copy(NTMesh3 copy, bool bNormals, bool bColors)
 		{
 			vertices = new DVector<double>(copy.vertices);
 			normals = (bNormals && copy.normals != null) ? new DVector<float>(copy.normals) : null;
@@ -153,8 +154,157 @@ namespace g4
 			updateTimeStamp(true);
 		}
 
+		protected void CopyByReference(NTMesh3 copy)
+		{
+            vertices = copy.vertices;
+			normals = copy.normals;
+			colors = copy.colors;
 
-		public NTMesh3(DMesh3 copy)
+			triangles = copy.triangles;
+			edges = copy.edges;
+			triangle_groups = copy.triangle_groups;
+			vertex_groups = copy.vertex_groups;
+
+
+			vertex_edges = copy.vertex_edges;
+			edge_triangles = copy.edge_triangles;
+			triangle_edges = copy.triangle_edges;
+
+			vertices_refcount = copy.vertices_refcount;
+			triangles_refcount = copy.triangles_refcount;
+			edges_refcount = copy.edges_refcount;
+
+			timestamp = copy.timestamp;
+			shape_timestamp = copy.shape_timestamp;
+
+			max_group_id = copy.max_group_id;
+			max_vertex_group_id = copy.max_vertex_group_id;
+
+			cached_bounds = copy.cached_bounds;
+			cached_bounds_timestamp = copy.cached_bounds_timestamp;
+
+			cached_is_closed = copy.cached_is_closed;
+			cached_is_closed_timstamp = copy.cached_is_closed_timstamp;
+
+			cached_has_non_manifold_edge = copy.cached_has_non_manifold_edge;
+			cached_has_non_manifold_edge_timestamp = copy.cached_has_non_manifold_edge_timestamp;
+
+			cached_has_self_intersections = copy.cached_has_self_intersections;
+			cached_has_self_intersections_timestamp = copy.cached_has_self_intersections_timestamp;
+
+			cached_number_of_components = copy.cached_number_of_components;
+			cached_number_of_components_timestamp = copy.cached_number_of_components_timestamp;
+		}
+
+		// This method assumes that vertices, normals, colors, and triangles are correct,
+		// and rebuilds all other indexing structures.
+        protected void RebuildIndexingStructures(bool bWantTriGroups = false, bool bWantVtxGroups = false)
+        {
+            // Completely reset all structural and refcount objects
+            edges = new DVector<int>();
+            edges_refcount = new RefCountVector();
+            vertex_edges = new SmallListSet();
+            edge_triangles = new SmallListSet();
+
+            triangle_edges = new DVector<int>();
+            triangle_edges.resize(triangles.Length);
+
+            vertices_refcount = new RefCountVector();
+            triangles_refcount = new RefCountVector();
+
+            // Handle Triangle Groups
+            if (bWantTriGroups)
+            {
+                triangle_groups = new DVector<int>();
+                triangle_groups.resize(triangles.Length / 3);
+                for (int i = 0; i < triangle_groups.size; ++i)
+                {
+                    triangle_groups[i] = -1;
+                }
+                max_group_id = 0;
+            }
+            else
+            {
+                triangle_groups = null;
+                max_group_id = 0;
+            }
+
+            // Handle Vertex Groups
+            if (bWantVtxGroups)
+            {
+                vertex_groups = new DVector<int>();
+                vertex_groups.resize(vertices.Length / 3);
+                for (int i = 0; i < vertex_groups.size; ++i)
+                {
+                    vertex_groups[i] = -1;
+                }
+                max_vertex_group_id = 0;
+            }
+            else
+            {
+                vertex_groups = null;
+                max_vertex_group_id = 0;
+            }
+
+            // Rebuild Vertex RefCounts
+            // A RefCountVector's allocate() method sequentially returns 0, 1, 2... 
+            // and sets the base refCount to 1 (representing an isolated vertex).
+            int max_vid = vertices.Length / 3;
+            for (int vid = 0; vid < max_vid; vid++)
+            {
+                int allocated_vid = vertices_refcount.allocate();
+                Debug.Assert(allocated_vid == vid, "Vertex allocation out of sync");
+
+                // Prepare the edge lists for this newly registered vertex
+                allocate_vertex_edges_list(vid);
+            }
+
+            // Rebuild Triangle RefCounts, Edges, and Vertex Adjacencies
+            int max_tid = triangles.Length / 3;
+            for (int tid = 0; tid < max_tid; tid++)
+            {
+                int i = 3 * tid;
+                int v0 = triangles[i];
+                int v1 = triangles[i + 1];
+                int v2 = triangles[i + 2];
+
+                // Safely handle potential gaps or degenerate triangles in your custom arrays
+                if (v0 == InvalidID || v0 == v1 || v1 == v2 || v2 == v0)
+                {
+                    // Allocate to keep the ID counter in sync, but immediately free it
+                    int skipped_tid = triangles_refcount.allocate();
+                    triangles_refcount.decrement(skipped_tid);
+                    continue;
+                }
+
+                // Register the triangle (sets its refCount to 1)
+                int allocated_tid = triangles_refcount.allocate();
+                Debug.Assert(allocated_tid == tid, "Triangle allocation out of sync");
+
+                // Increment the vertex refcounts for this valid triangle
+                // (A vertex with 2 connected triangles will end up with a refCount of 3)
+                vertices_refcount.increment(v0);
+                vertices_refcount.increment(v1);
+                vertices_refcount.increment(v2);
+
+                // Find existing edges
+                int e0 = find_edge(v0, v1);
+                int e1 = find_edge(v1, v2);
+                int e2 = find_edge(v2, v0);
+
+                // Register the edges, and associates triangles and edges
+				// If the edge doesn't exist, add_tri_edge() creates a new one
+                add_tri_edge(tid, v0, v1, 0, e0);
+                add_tri_edge(tid, v1, v2, 1, e1);
+                add_tri_edge(tid, v2, v0, 2, e2);
+            }
+
+            // Update internal tracking state to invalidate cached bounds/closed-checks
+            updateTimeStamp(true);
+        }
+
+
+        public NTMesh3(DMesh3 copy)
 		{
 			allocate(copy.HasVertexNormals, copy.HasVertexColors, copy.HasTriangleGroups, false);
 
@@ -176,11 +326,12 @@ namespace g4
 
 		public int Timestamp { get { return timestamp; } }
 		public int ShapeTimestamp { get { return shape_timestamp; } }
+        public int NormalTimestamp { get { return normal_timestamp; } }
 
 
-		// IMesh impl
+        // IMesh impl
 
-		public int VertexCount { get { return vertices_refcount.count; } }
+        public int VertexCount { get { return vertices_refcount.count; } }
 		public int TriangleCount { get { return triangles_refcount.count; } }
 		public int EdgeCount { get { return edges_refcount.count; } }
 
@@ -204,6 +355,165 @@ namespace g4
 				if (colors != null) c |= MeshComponents.VertexColors;
 				if (triangle_groups != null) c |= MeshComponents.FaceGroups;
 				return c;
+			}
+		}
+
+		public void ComputeNormals(bool bApplyAreaWeighting = true)
+		{
+			if (normal_timestamp == timestamp)
+			{
+				return;
+			}
+
+			if (bApplyAreaWeighting)
+			{
+				ComputeNormalsAreaWeighted();
+			}
+			else
+			{
+				ComputeNormalsSimpleAverage();
+			}
+
+			normal_timestamp = timestamp;
+		}
+
+		// Calculates the normal of each vertex as the average of the normals
+		// of its triangles, weighted by their area.
+        private void ComputeNormalsAreaWeighted()
+        {
+			if (normals == null)
+			{
+				normals = new DVector<float>();
+			}
+
+			if (normals.Length != vertices.Length)
+			{
+				normals.resize(vertices.Length);
+			}
+
+			// Resetting the normals
+			for (int i = 0; i < normals.size; i++)
+			{
+				normals[i] = 0.0f;
+			}
+
+            // Scatter Pass: Accumulate Raw Cross Products
+            foreach (int tid in TriangleIndices())
+            {
+                Index3i t = GetTriangle(tid);
+                Vector3d v0 = GetVertex(t.a);
+                Vector3d v1 = GetVertex(t.b);
+                Vector3d v2 = GetVertex(t.c);
+
+                // Calculating the raw cross product: (v1-v0) x (v2-v0)
+                // The cross product magnitude is 2x triangle area; adding this 
+                // "un-normalized" vector automatically weights by area.
+                double dx1 = v1.x - v0.x, dy1 = v1.y - v0.y, dz1 = v1.z - v0.z;
+                double dx2 = v2.x - v0.x, dy2 = v2.y - v0.y, dz2 = v2.z - v0.z;
+
+                float nx = (float)(dy1 * dz2 - dz1 * dy2);
+                float ny = (float)(dz1 * dx2 - dx1 * dz2);
+                float nz = (float)(dx1 * dy2 - dy1 * dx2);
+
+                // Accumulating into the triangle vertices
+                normals[3 * t.a] += nx;
+                normals[3 * t.a + 1] += ny;
+                normals[3 * t.a + 2] += nz;
+
+                normals[3 * t.b] += nx;
+                normals[3 * t.b + 1] += ny;
+                normals[3 * t.b + 2] += nz;
+
+                normals[3 * t.c] += nx;
+                normals[3 * t.c + 1] += ny;
+                normals[3 * t.c + 2] += nz;
+            }
+
+            // Normalization Pass
+            foreach (int vid in VertexIndices())
+            {
+                int n = 3 * vid;
+                float x = normals[n], y = normals[n + 1], z = normals[n + 2];
+                float lenSq = x * x + y * y + z * z;
+
+                if (lenSq > MathUtil.ZeroTolerancef)
+                {
+                    float s = 1.0f / (float)Math.Sqrt(lenSq);
+                    normals[n] *= s;
+                    normals[n + 1] *= s;
+                    normals[n + 2] *= s;
+                }
+                else
+                {
+                    // Fallback for isolated vertices
+                    normals[n] = 0; normals[n + 1] = 0; normals[n + 2] = 0;
+                }
+            }
+        }
+
+		// Implementation with simple average
+		private void ComputeNormalsSimpleAverage()
+		{
+			if (normals == null)
+			{
+				normals = new DVector<float>();
+			}
+
+			if (normals.Length != vertices.Length)
+			{
+				normals.resize(vertices.Length);
+			}
+
+			var accumulatedNormal = new Vector3f();
+			var triangle = new Triangle3d();
+			foreach (var vid in VertexIndices())
+			{
+				var index = 3 * vid;
+				var vertexTriangleCount = 0;
+				accumulatedNormal.x = 0.0f;
+				accumulatedNormal.y = 0.0f;
+				accumulatedNormal.z = 0.0f;
+				foreach (var tid in VtxTrianglesItr(vid))
+				{
+					// Calculating the normal of each triangle
+					var tvids = GetTriangle(tid);
+					triangle.V0 = GetVertex(tvids.a);
+					triangle.V1 = GetVertex(tvids.b);
+					triangle.V2 = GetVertex(tvids.c);
+
+					var normal = triangle.Normal;
+					accumulatedNormal.x += (float)normal.x;
+					accumulatedNormal.y += (float)normal.y;
+					accumulatedNormal.z += (float)normal.z;
+					vertexTriangleCount++;
+				}
+
+				// Handling isolated vertices
+				if (vertexTriangleCount == 0)
+				{
+					// Setting the normal to zero
+					normals[index] = 0.0f;
+					normals[index + 1] = 0.0f;
+					normals[index + 2] = 0.0f;
+					continue;
+				}
+
+				// Handling degenerate normal
+				if (accumulatedNormal.LengthSquared < MathUtil.ZeroTolerancef)
+				{
+					// Setting the normal to zero
+					normals[index] = 0.0f;
+					normals[index + 1] = 0.0f;
+					normals[index + 2] = 0.0f;
+					continue;
+				}
+
+				// Normalizing the average normal
+				accumulatedNormal.Normalize();
+
+				normals[index] = accumulatedNormal.x;
+				normals[index + 1] = accumulatedNormal.y;
+				normals[index + 2] = accumulatedNormal.z;
 			}
 		}
 

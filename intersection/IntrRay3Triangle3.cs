@@ -108,12 +108,92 @@ namespace g4
             return false;
         }
 
+        // 3. Origin is outside. Check intersection with all 3 edges.
+        private static bool CheckEdge(ref Ray3d ray, ref Vector3d start, ref Vector3d E, ref double minT, ref Vector3d normal)
+        {
+            Vector3d N_edge = E.Cross(ref normal);
+            double det = ray.Direction.Dot(ref N_edge);
 
+            var hit = false;
+            if (Math.Abs(det) > MathUtil.ZeroTolerance)
+            {
+                Vector3d startToOrigin = start - ray.Origin;
+                double t = startToOrigin.Dot(ref N_edge) / det;
+
+                if (t >= 0 && t < minT)
+                {
+                    Vector3d P = ray.Origin + (ray.Direction * t);
+                    Vector3d P_minus_start = P - start;
+                    double u = P_minus_start.Dot(ref E) / E.Dot(ref E);
+
+                    if (u >= -MathUtil.ZeroTolerance && u <= 1.0 + MathUtil.ZeroTolerance)
+                    {
+                        minT = t;
+                        hit = true;
+                    }
+                }
+            }
+
+            return hit;
+        }
+
+
+        private static bool HandleCoplanarEdgeCase(ref Ray3d ray, ref Vector3d V0, ref Vector3d V1, ref Vector3d V2, out double rayT)
+        {
+            rayT = double.MaxValue;
+
+            // Recalculate the initial triangle data (cheap and keeps the signature clean)
+            Vector3d edge1 = V1 - V0;
+            Vector3d edge2 = V2 - V0;
+            Vector3d normal = edge1.Cross(ref edge2);
+            Vector3d diff = ray.Origin - V0;
+
+            // 1. Verify Coplanarity
+            double distFromPlane = diff.Dot(ref normal);
+            if (Math.Abs(distFromPlane) > MathUtil.ZeroTolerance)
+            {
+                return false; // Parallel, but hovering above/below the triangle
+            }
+
+            bool hit = false;
+            double minT = double.MaxValue;
+
+            // Calculate remaining edges and diffs
+            Vector3d edge3 = V2 - V1;
+            Vector3d edge4 = V0 - V2;
+            Vector3d diff1 = ray.Origin - V1;
+            Vector3d diff2 = ray.Origin - V2;
+
+            // 2. Is the ray origin inside the triangle?
+            Vector3d cross0 = edge1.Cross(ref diff);
+            Vector3d cross1 = edge3.Cross(ref diff1);
+            Vector3d cross2 = edge4.Cross(ref diff2);
+
+            if (cross0.Dot(ref normal) >= -MathUtil.ZeroTolerance &&
+                cross1.Dot(ref normal) >= -MathUtil.ZeroTolerance &&
+                cross2.Dot(ref normal) >= -MathUtil.ZeroTolerance)
+            {
+                rayT = 0.0;
+                return true;
+            }
+
+            hit |= CheckEdge(ref ray, ref V0, ref edge1, ref minT, ref normal);
+            hit |= CheckEdge(ref ray, ref V1, ref edge3, ref minT, ref normal);
+            hit |= CheckEdge(ref ray, ref V2, ref edge4, ref minT, ref normal);
+
+            if (hit)
+            {
+                rayT = minT;
+                return true;
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// minimal intersection test, computes ray-t
         /// </summary>
-        public static bool Intersects(ref Ray3d ray, ref Vector3d V0, ref Vector3d V1, ref Vector3d V2, out double rayT)
+        public static bool Intersects(ref Ray3d ray, ref Vector3d V0, ref Vector3d V1, ref Vector3d V2, out double rayT, bool handleCoplanarRays = false)
         {
             // Compute the offset origin, edges, and normal.
             Vector3d diff = ray.Origin - V0;
@@ -136,9 +216,8 @@ namespace g4
                 sign = -1;
                 DdN = -DdN;
             } else {
-                // Ray and triangle are parallel, call it a "no intersection"
-                // even if the ray does intersect.
-                return false;
+                return handleCoplanarRays ? 
+                    HandleCoplanarEdgeCase(ref ray, ref V0, ref V1, ref V2, out rayT) : false;
             }
 
             Vector3d cross = diff.Cross(ref edge2);

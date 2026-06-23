@@ -269,7 +269,7 @@ namespace g4
         /// find id of first triangle that ray hits, within distance fMaxDist, or return DMesh3.InvalidID
         /// Use MeshQueries.TriangleIntersection() to get more information
         /// </summary>
-        public virtual int FindNearestHitTriangle(Ray3d ray, double fMaxDist = double.MaxValue)
+        public virtual int FindNearestHitTriangle(Ray3d ray, double fMaxDist = double.MaxValue, bool handleCoplanarRays = false)
         {
             if (mesh_timestamp != mesh.ShapeTimestamp)
                 throw new Exception("DMeshAABBTree3.FindNearestHitTriangle: mesh has been modified since tree construction");
@@ -281,11 +281,11 @@ namespace g4
             //   nearestT to double.MaxValue, then we will test all boxes (!)
             double fNearestT = (fMaxDist < double.MaxValue) ? fMaxDist : float.MaxValue;
             int tNearID = DMesh3.InvalidID;
-            find_hit_triangle(root_index, ref ray, ref fNearestT, ref tNearID);
+            find_hit_triangle(root_index, ref ray, ref fNearestT, ref tNearID, handleCoplanarRays);
             return tNearID;
         }
 
-        protected void find_hit_triangle(int iBox, ref Ray3d ray, ref double fNearestT, ref int tID)
+        protected void find_hit_triangle(int iBox, ref Ray3d ray, ref double fNearestT, ref int tID, bool handleCoplanarRays = false)
         {
             int idx = box_to_index[iBox];
             if ( idx < triangles_end ) {            // triange-list case, array is [N t1 t2 ... tN]
@@ -298,7 +298,7 @@ namespace g4
 
                     mesh.GetTriVertices(ti, ref tri.V0, ref tri.V1, ref tri.V2);
                     double rayt;
-                    if (IntrRay3Triangle3.Intersects(ref ray, ref tri.V0, ref tri.V1, ref tri.V2, out rayt)) {
+                    if (IntrRay3Triangle3.Intersects(ref ray, ref tri.V0, ref tri.V1, ref tri.V2, out rayt, handleCoplanarRays)) {
                         if (rayt < fNearestT) {
                             fNearestT = rayt;
                             tID = ti;
@@ -321,7 +321,7 @@ namespace g4
                     iChild1 = (-iChild1) - 1;
                     double fChild1T = box_ray_intersect_t(iChild1, ray);
                     if (fChild1T <= fNearestT + e) {
-                        find_hit_triangle(iChild1, ref ray, ref fNearestT, ref tID);
+                        find_hit_triangle(iChild1, ref ray, ref fNearestT, ref tID, handleCoplanarRays);
                     }
 
                 } else {                            // 2 children, descend closest first
@@ -332,16 +332,16 @@ namespace g4
                     double fChild2T = box_ray_intersect_t(iChild2, ray);
                     if (fChild1T < fChild2T) {
                         if (fChild1T <= fNearestT + e) {
-                            find_hit_triangle(iChild1, ref ray, ref fNearestT, ref tID);
+                            find_hit_triangle(iChild1, ref ray, ref fNearestT, ref tID, handleCoplanarRays);
                             if (fChild2T <= fNearestT + e) {
-                                find_hit_triangle(iChild2, ref ray, ref fNearestT, ref tID);
+                                find_hit_triangle(iChild2, ref ray, ref fNearestT, ref tID, handleCoplanarRays);
                             }
                         }
                     } else {
                         if (fChild2T <= fNearestT + e) {
-                            find_hit_triangle(iChild2, ref ray, ref fNearestT, ref tID);
+                            find_hit_triangle(iChild2, ref ray, ref fNearestT, ref tID, handleCoplanarRays);
                             if (fChild1T <= fNearestT + e) {
-                                find_hit_triangle(iChild1, ref ray, ref fNearestT, ref tID);
+                                find_hit_triangle(iChild1, ref ray, ref fNearestT, ref tID, handleCoplanarRays);
                             }
                         }
                     }
