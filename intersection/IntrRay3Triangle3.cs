@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -29,6 +29,8 @@ namespace g4
             get { return Result == IntersectionResult.Intersects && Type == IntersectionType.Point; }
         }
 
+        bool m_handleCoplanarRays = false;   // coplanar-ray handling used for the cached Result
+
 
         public double RayParameter;
         public Vector3d TriangleBaryCoords;
@@ -40,17 +42,30 @@ namespace g4
 		}
 
 
-        public IntrRay3Triangle3 Compute()
+        /// <summary>
+        /// find the intersection of ray and triangle (see Find) and return this object
+        /// </summary>
+        /// <param name="handleCoplanarRays">if true, rays lying in the triangle plane are handled and the first hit point is reported (same rule as the static Intersects); if false, a parallel ray is reported as no intersection</param>
+        public IntrRay3Triangle3 Compute(bool handleCoplanarRays = false)
         {
-            Find();
+            Find(handleCoplanarRays);
             return this;
         }
 
 
-        public bool Find()
+        /// <summary>
+        /// find the intersection of ray and triangle, storing the result in this object
+        /// </summary>
+        /// <param name="handleCoplanarRays">if true, rays lying in the triangle plane are handled and the first hit point is reported (same rule as the static Intersects); if false, a parallel ray is reported as no intersection</param>
+        public bool Find(bool handleCoplanarRays = false)
         {
-            if (Result != IntersectionResult.NotComputed)
+            // the cached result is only valid if it was computed with the same
+            // coplanar-ray handling, because the flag changes the outcome for
+            // rays parallel to the triangle plane
+            if (Result != IntersectionResult.NotComputed && m_handleCoplanarRays == handleCoplanarRays)
                 return (Result != g4.IntersectionResult.NoIntersection);
+
+            m_handleCoplanarRays = handleCoplanarRays;
 
             // Compute the offset origin, edges, and normal.
             Vector3d diff = ray.Origin - triangle.V0;
@@ -71,6 +86,19 @@ namespace g4
                 sign = -1;
                 DdN = -DdN;
             } else {
+                if (handleCoplanarRays) {
+                    double rayT;
+                    if (HandleCoplanarEdgeCase(ref ray, ref triangle.V0, ref triangle.V1, ref triangle.V2, out rayT)) {
+                        // coplanar ray: report the first hit point with the (closed) triangle
+                        RayParameter = rayT;
+                        Vector3d hit = ray.Origin + (ray.Direction * rayT);
+                        TriangleBaryCoords = triangle.BarycentricCoords(hit);
+                        Type = IntersectionType.Point;
+                        Quantity = 1;
+                        Result = IntersectionResult.Intersects;
+                        return true;
+                    }
+                }
                 // Ray and triangle are parallel, call it a "no intersection"
                 // even if the ray does intersect.
                 Result = IntersectionResult.NoIntersection;
@@ -193,6 +221,7 @@ namespace g4
         /// <summary>
         /// minimal intersection test, computes ray-t
         /// </summary>
+        /// <param name="handleCoplanarRays">if true, rays lying in the triangle plane are handled and the first hit parameter is returned; if false, a parallel ray never intersects</param>
         public static bool Intersects(ref Ray3d ray, ref Vector3d V0, ref Vector3d V1, ref Vector3d V2, out double rayT, bool handleCoplanarRays = false)
         {
             // Compute the offset origin, edges, and normal.
