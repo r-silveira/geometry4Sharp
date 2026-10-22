@@ -1685,58 +1685,131 @@ namespace g4
         /// returns triangle-id pair (my_tri,other_tri), or Index2i.Max if not found within max_dist
         /// Use MeshQueries.TrianglesDistance() to get more information
         /// </summary>
-        public virtual Index2i FindNearestTriangles(NTMeshAABBTree3 otherTree, Func<Vector3d, Vector3d> TransformF, out double distance, double max_dist = double.MaxValue)
+        //public virtual Index2i FindNearestTriangles(NTMeshAABBTree3 otherTree, Func<Vector3d, Vector3d> TransformF, out double distance, double max_dist = double.MaxValue)
+        //{
+        //    if (mesh_timestamp != mesh.ShapeTimestamp)
+        //        throw new Exception("NTMeshAABBTree3.TestIntersection: mesh has been modified since tree construction");
+
+        //    double nearest_sqr = double.MaxValue;
+        //    if (max_dist < double.MaxValue)
+        //        nearest_sqr = max_dist * max_dist;
+        //    Index2i nearest_pair = Index2i.Max;
+
+        //    find_nearest_triangles(root_index, otherTree, TransformF, otherTree.root_index, 0, ref nearest_sqr, ref nearest_pair);
+        //    distance = (nearest_sqr < double.MaxValue) ? Math.Sqrt(nearest_sqr) : double.MaxValue;
+        //    return nearest_pair;
+        //}
+
+
+        public virtual Index2i FindNearestTriangles(
+            NTMeshAABBTree3 otherTree,
+            Func<Vector3d, Vector3d> TransformF,
+            out double distance,
+            double max_dist = double.MaxValue)
         {
             if (mesh_timestamp != mesh.ShapeTimestamp)
                 throw new Exception("NTMeshAABBTree3.TestIntersection: mesh has been modified since tree construction");
 
             double nearest_sqr = double.MaxValue;
+
             if (max_dist < double.MaxValue)
                 nearest_sqr = max_dist * max_dist;
+
             Index2i nearest_pair = Index2i.Max;
 
-            find_nearest_triangles(root_index, otherTree, TransformF, otherTree.root_index, 0, ref nearest_sqr, ref nearest_pair);
-            distance = (nearest_sqr < double.MaxValue) ? Math.Sqrt(nearest_sqr) : double.MaxValue;
+            // Create one distance query instance per FindNearestTriangles call.
+            // It will be reused throughout the recursive traversal.
+            var dist = new DistTriangle3Triangle3(
+                new Triangle3d(),
+                new Triangle3d());
+
+            find_nearest_triangles(
+                root_index,
+                otherTree,
+                TransformF,
+                otherTree.root_index,
+                0,
+                ref nearest_sqr,
+                ref nearest_pair,
+                dist);
+
+            distance = (nearest_sqr < double.MaxValue)
+                ? Math.Sqrt(nearest_sqr)
+                : double.MaxValue;
+
             return nearest_pair;
         }
 
-        protected void find_nearest_triangles(int iBox, NTMeshAABBTree3 otherTree, Func<Vector3d, Vector3d> TransformF, int oBox, int depth, ref double nearest_sqr, ref Index2i nearest_pair)
+        protected void find_nearest_triangles(
+            int iBox,
+            NTMeshAABBTree3 otherTree,
+            Func<Vector3d, Vector3d> TransformF,
+            int oBox,
+            int depth,
+            ref double nearest_sqr,
+            ref Index2i nearest_pair,
+            DistTriangle3Triangle3 dist)
         {
             int idx = box_to_index[iBox];
             int odx = otherTree.box_to_index[oBox];
 
             if (idx < triangles_end && odx < otherTree.triangles_end)
             {
-                // ok we are at triangles for both trees, do triangle-level testing
-                Triangle3d tri = new Triangle3d(), otri = new Triangle3d();
-                int num_tris = index_list[idx], onum_tris = otherTree.index_list[odx];
+                // Both nodes are leaves: perform triangle-level testing.
+                Triangle3d tri = new Triangle3d();
+                Triangle3d otri = new Triangle3d();
 
-                DistTriangle3Triangle3 dist = new DistTriangle3Triangle3(new Triangle3d(), new Triangle3d());
+                int num_tris = index_list[idx];
+                int onum_tris = otherTree.index_list[odx];
 
-                // outer iteration is "other" tris that need to be transformed (more expensive)
+                // The same DistTriangle3Triangle3 instance is reused
+                // across all leaf pairs of the traversal.
+
+                // Outer iteration over triangles of the other tree.
                 for (int j = 1; j <= onum_tris; ++j)
                 {
                     int tj = otherTree.index_list[odx + j];
-                    if (otherTree.TriangleFilterF != null && otherTree.TriangleFilterF(tj) == false)
+
+                    if (otherTree.TriangleFilterF != null &&
+                        otherTree.TriangleFilterF(tj) == false)
                         continue;
-                    otherTree.mesh.GetTriVertices(tj, ref otri.V0, ref otri.V1, ref otri.V2);
+
+                    otherTree.mesh.GetTriVertices(
+                        tj,
+                        ref otri.V0,
+                        ref otri.V1,
+                        ref otri.V2);
+
                     if (TransformF != null)
                     {
                         otri.V0 = TransformF(otri.V0);
                         otri.V1 = TransformF(otri.V1);
                         otri.V2 = TransformF(otri.V2);
                     }
+
+                    // The property setter invalidates the cached distance.
                     dist.Triangle0 = otri;
 
-                    // inner iteration over "our" triangles
+                    // Inner iteration over triangles of this tree.
                     for (int i = 1; i <= num_tris; ++i)
                     {
                         int ti = index_list[idx + i];
-                        if (TriangleFilterF != null && TriangleFilterF(ti) == false)
+
+                        if (TriangleFilterF != null &&
+                            TriangleFilterF(ti) == false)
                             continue;
-                        mesh.GetTriVertices(ti, ref tri.V0, ref tri.V1, ref tri.V2);
+
+                        mesh.GetTriVertices(
+                            ti,
+                            ref tri.V0,
+                            ref tri.V1,
+                            ref tri.V2);
+
+                        // The property setter invalidates the cached distance.
                         dist.Triangle1 = tri;
+
                         double dist_sqr = dist.GetSquared();
+
                         if (dist_sqr < nearest_sqr)
                         {
                             nearest_sqr = dist_sqr;
@@ -1748,102 +1821,517 @@ namespace g4
                 return;
             }
 
-            // we either descend "our" tree or the other tree
-            //   - if we have hit triangles on "our" tree, we have to descend other
-            //   - if we hit triangles on "other", we have to descend ours
-            //   - otherwise, we alternate at each depth. This produces wider
-            //     branching but is significantly faster (~10x) for both hits and misses
+            // Descend one tree at a time, alternating when both
+            // nodes are internal. Preserve the original traversal.
             bool bDescendOther = (idx < triangles_end || depth % 2 == 0);
+
             if (bDescendOther && odx < otherTree.triangles_end)
-                bDescendOther = false;      // can't
+                bDescendOther = false;
 
             if (bDescendOther)
             {
-                // ok we reached triangles on our side but we need to still reach triangles on
-                // the other side, so we descend "their" children
+                // Descend the other tree.
                 AxisAlignedBox3d bounds = get_boxd(iBox);
 
                 int oChild1 = otherTree.index_list[odx];
-                if (oChild1 < 0)
-                {                 // 1 child, descend if nearer than cur min-dist
-                    oChild1 = (-oChild1) - 1;
-                    AxisAlignedBox3d oChild1Box = otherTree.get_boxd(oChild1, TransformF);
-                    if (oChild1Box.DistanceSquared(ref bounds) < nearest_sqr)
-                        find_nearest_triangles(iBox, otherTree, TransformF, oChild1, depth + 1, ref nearest_sqr, ref nearest_pair);
 
+                if (oChild1 < 0)
+                {
+                    // Single child.
+                    oChild1 = (-oChild1) - 1;
+
+                    AxisAlignedBox3d oChild1Box =
+                        otherTree.get_boxd(oChild1, TransformF);
+
+                    if (oChild1Box.DistanceSquared(ref bounds) < nearest_sqr)
+                    {
+                        find_nearest_triangles(
+                            iBox,
+                            otherTree,
+                            TransformF,
+                            oChild1,
+                            depth + 1,
+                            ref nearest_sqr,
+                            ref nearest_pair,
+                            dist);
+                    }
                 }
                 else
-                {                            // 2 children
+                {
+                    // Two children.
                     oChild1 = oChild1 - 1;
                     int oChild2 = otherTree.index_list[odx + 1] - 1;
 
-                    AxisAlignedBox3d oChild1Box = otherTree.get_boxd(oChild1, TransformF);
-                    AxisAlignedBox3d oChild2Box = otherTree.get_boxd(oChild2, TransformF);
+                    AxisAlignedBox3d oChild1Box =
+                        otherTree.get_boxd(oChild1, TransformF);
 
-                    // descend closer box first
+                    AxisAlignedBox3d oChild2Box =
+                        otherTree.get_boxd(oChild2, TransformF);
+
                     double d1Sqr = oChild1Box.DistanceSquared(ref bounds);
                     double d2Sqr = oChild2Box.DistanceSquared(ref bounds);
+
+                    // Visit the closer child first.
                     if (d2Sqr < d1Sqr)
                     {
                         if (d2Sqr < nearest_sqr)
-                            find_nearest_triangles(iBox, otherTree, TransformF, oChild2, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iBox,
+                                otherTree,
+                                TransformF,
+                                oChild2,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
+
                         if (d1Sqr < nearest_sqr)
-                            find_nearest_triangles(iBox, otherTree, TransformF, oChild1, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iBox,
+                                otherTree,
+                                TransformF,
+                                oChild1,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
                     }
                     else
                     {
                         if (d1Sqr < nearest_sqr)
-                            find_nearest_triangles(iBox, otherTree, TransformF, oChild1, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iBox,
+                                otherTree,
+                                TransformF,
+                                oChild1,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
+
                         if (d2Sqr < nearest_sqr)
-                            find_nearest_triangles(iBox, otherTree, TransformF, oChild2, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iBox,
+                                otherTree,
+                                TransformF,
+                                oChild2,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
                     }
-
                 }
-
             }
             else
             {
-                // descend our tree nodes if they intersect w/ current bounds of other tree
-                AxisAlignedBox3d oBounds = otherTree.get_boxd(oBox, TransformF);
+                // Descend this tree.
+                AxisAlignedBox3d oBounds =
+                    otherTree.get_boxd(oBox, TransformF);
 
                 int iChild1 = index_list[idx];
-                if (iChild1 < 0)
-                {                 // 1 child, descend if nearer than cur min-dist
-                    iChild1 = (-iChild1) - 1;
-                    if (box_box_distsqr(iChild1, ref oBounds) < nearest_sqr)
-                        find_nearest_triangles(iChild1, otherTree, TransformF, oBox, depth + 1, ref nearest_sqr, ref nearest_pair);
 
+                if (iChild1 < 0)
+                {
+                    // Single child.
+                    iChild1 = (-iChild1) - 1;
+
+                    if (box_box_distsqr(iChild1, ref oBounds) < nearest_sqr)
+                    {
+                        find_nearest_triangles(
+                            iChild1,
+                            otherTree,
+                            TransformF,
+                            oBox,
+                            depth + 1,
+                            ref nearest_sqr,
+                            ref nearest_pair,
+                            dist);
+                    }
                 }
                 else
-                {                            // 2 children
+                {
+                    // Two children.
                     iChild1 = iChild1 - 1;
                     int iChild2 = index_list[idx + 1] - 1;
 
-                    // descend closer box first
                     double d1Sqr = box_box_distsqr(iChild1, ref oBounds);
                     double d2Sqr = box_box_distsqr(iChild2, ref oBounds);
+
+                    // Visit the closer child first.
                     if (d2Sqr < d1Sqr)
                     {
                         if (d2Sqr < nearest_sqr)
-                            find_nearest_triangles(iChild2, otherTree, TransformF, oBox, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iChild2,
+                                otherTree,
+                                TransformF,
+                                oBox,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
+
                         if (d1Sqr < nearest_sqr)
-                            find_nearest_triangles(iChild1, otherTree, TransformF, oBox, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iChild1,
+                                otherTree,
+                                TransformF,
+                                oBox,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
                     }
                     else
                     {
                         if (d1Sqr < nearest_sqr)
-                            find_nearest_triangles(iChild1, otherTree, TransformF, oBox, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iChild1,
+                                otherTree,
+                                TransformF,
+                                oBox,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
+
                         if (d2Sqr < nearest_sqr)
-                            find_nearest_triangles(iChild2, otherTree, TransformF, oBox, depth + 1, ref nearest_sqr, ref nearest_pair);
+                        {
+                            find_nearest_triangles(
+                                iChild2,
+                                otherTree,
+                                TransformF,
+                                oBox,
+                                depth + 1,
+                                ref nearest_sqr,
+                                ref nearest_pair,
+                                dist);
+                        }
                     }
-
                 }
-
             }
         }
 
 
+        /// <summary>
+        /// Returns true if any pair of triangles from the two trees
+        /// is closer than maxDistance.
+        ///
+        /// Unlike FindNearestTriangles, this method stops immediately
+        /// when a qualifying pair is found.
+        ///
+        /// TransformF transforms vertices of otherTree into the
+        /// coordinate system of this tree.
+        /// </summary>
+        public virtual bool HasTrianglesWithinDistance(
+            NTMeshAABBTree3 otherTree,
+            double maxDistance,
+            Func<Vector3d, Vector3d> TransformF = null)
+        {
+            if (mesh_timestamp != mesh.ShapeTimestamp)
+            {
+                throw new Exception(
+                    "NTMeshAABBTree3.HasTrianglesWithinDistance: " +
+                    "mesh has been modified since tree construction");
+            }
 
+            // This query is intended for positive thresholds.
+            // Zero-distance intersection and containment are
+            // handled separately by MeshUtilities.
+            if (maxDistance <= 0 || double.IsNaN(maxDistance))
+                return false;
+
+            double maxDistanceSquared = maxDistance * maxDistance;
+
+            // One reusable query per traversal.
+            // Nothing is shared across threads.
+            var dist = new DistTriangle3Triangle3(
+                new Triangle3d(),
+                new Triangle3d());
+
+            return has_triangles_within_distance(
+                root_index,
+                otherTree,
+                TransformF,
+                otherTree.root_index,
+                0,
+                maxDistanceSquared,
+                dist);
+        }
+
+
+        private bool has_triangles_within_distance(
+            int iBox,
+            NTMeshAABBTree3 otherTree,
+            Func<Vector3d, Vector3d> TransformF,
+            int oBox,
+            int depth,
+            double maxDistanceSquared,
+            DistTriangle3Triangle3 dist)
+        {
+            int idx = box_to_index[iBox];
+            int odx = otherTree.box_to_index[oBox];
+
+            // Both nodes are leaves.
+            if (idx < triangles_end &&
+                odx < otherTree.triangles_end)
+            {
+                Triangle3d tri = new Triangle3d();
+                Triangle3d otri = new Triangle3d();
+
+                int num_tris = index_list[idx];
+                int onum_tris = otherTree.index_list[odx];
+
+                // Evaluate the other tree first, preserving
+                // the existing triangle iteration order.
+                for (int j = 1; j <= onum_tris; ++j)
+                {
+                    int tj = otherTree.index_list[odx + j];
+
+                    if (otherTree.TriangleFilterF != null &&
+                        !otherTree.TriangleFilterF(tj))
+                    {
+                        continue;
+                    }
+
+                    otherTree.mesh.GetTriVertices(
+                        tj,
+                        ref otri.V0,
+                        ref otri.V1,
+                        ref otri.V2);
+
+                    if (TransformF != null)
+                    {
+                        otri.V0 = TransformF(otri.V0);
+                        otri.V1 = TransformF(otri.V1);
+                        otri.V2 = TransformF(otri.V2);
+                    }
+
+                    dist.Triangle0 = otri;
+
+                    for (int i = 1; i <= num_tris; ++i)
+                    {
+                        int ti = index_list[idx + i];
+
+                        if (TriangleFilterF != null &&
+                            !TriangleFilterF(ti))
+                        {
+                            continue;
+                        }
+
+                        mesh.GetTriVertices(
+                            ti,
+                            ref tri.V0,
+                            ref tri.V1,
+                            ref tri.V2);
+
+                        dist.Triangle1 = tri;
+
+                        double distanceSquared = dist.GetSquared();
+
+                        // EARLY STOP:
+                        // Preserve the strict comparison used by
+                        // the original FindNearestTriangles search.
+                        if (distanceSquared < maxDistanceSquared)
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            // Use the same alternating descent strategy
+            // as find_nearest_triangles().
+            bool descendOther =
+                idx < triangles_end || depth % 2 == 0;
+
+            if (descendOther &&
+                odx < otherTree.triangles_end)
+            {
+                descendOther = false;
+            }
+
+            if (descendOther)
+            {
+                AxisAlignedBox3d bounds = get_boxd(iBox);
+
+                int oChild1 = otherTree.index_list[odx];
+
+                if (oChild1 < 0)
+                {
+                    // One child.
+                    oChild1 = (-oChild1) - 1;
+
+                    AxisAlignedBox3d childBox =
+                        otherTree.get_boxd(oChild1, TransformF);
+
+                    if (childBox.DistanceSquared(ref bounds)
+                        < maxDistanceSquared)
+                    {
+                        return has_triangles_within_distance(
+                            iBox,
+                            otherTree,
+                            TransformF,
+                            oChild1,
+                            depth + 1,
+                            maxDistanceSquared,
+                            dist);
+                    }
+
+                    return false;
+                }
+
+                // Two children: visit the nearest first.
+                oChild1 -= 1;
+
+                int oChild2 =
+                    otherTree.index_list[odx + 1] - 1;
+
+                AxisAlignedBox3d box1 =
+                    otherTree.get_boxd(oChild1, TransformF);
+
+                AxisAlignedBox3d box2 =
+                    otherTree.get_boxd(oChild2, TransformF);
+
+                double d1 = box1.DistanceSquared(ref bounds);
+                double d2 = box2.DistanceSquared(ref bounds);
+
+                if (d2 < d1)
+                {
+                    if (d2 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iBox, otherTree, TransformF,
+                            oChild2, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+
+                    if (d1 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iBox, otherTree, TransformF,
+                            oChild1, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (d1 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iBox, otherTree, TransformF,
+                            oChild1, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+
+                    if (d2 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iBox, otherTree, TransformF,
+                            oChild2, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+                }
+            }
+            else
+            {
+                AxisAlignedBox3d oBounds =
+                    otherTree.get_boxd(oBox, TransformF);
+
+                int iChild1 = index_list[idx];
+
+                if (iChild1 < 0)
+                {
+                    // One child.
+                    iChild1 = (-iChild1) - 1;
+
+                    if (box_box_distsqr(iChild1, ref oBounds)
+                        < maxDistanceSquared)
+                    {
+                        return has_triangles_within_distance(
+                            iChild1, otherTree, TransformF,
+                            oBox, depth + 1,
+                            maxDistanceSquared, dist);
+                    }
+
+                    return false;
+                }
+
+                // Two children: visit the nearest first.
+                iChild1 -= 1;
+
+                int iChild2 = index_list[idx + 1] - 1;
+
+                double d1 =
+                    box_box_distsqr(iChild1, ref oBounds);
+
+                double d2 =
+                    box_box_distsqr(iChild2, ref oBounds);
+
+                if (d2 < d1)
+                {
+                    if (d2 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iChild2, otherTree, TransformF,
+                            oBox, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+
+                    if (d1 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iChild1, otherTree, TransformF,
+                            oBox, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (d1 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iChild1, otherTree, TransformF,
+                            oBox, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+
+                    if (d2 < maxDistanceSquared &&
+                        has_triangles_within_distance(
+                            iChild2, otherTree, TransformF,
+                            oBox, depth + 1,
+                            maxDistanceSquared, dist))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
 
 

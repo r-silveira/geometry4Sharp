@@ -10,6 +10,8 @@ namespace g4
 
     public class DistSegment3Triangle3
     {
+        private DistLine3Triangle3 _cachedLineTriangleQuery;
+
         Segment3d segment;
         public Segment3d Segment
         {
@@ -49,39 +51,69 @@ namespace g4
         }
 
 
+
+
         public double GetSquared()
         {
             if (DistanceSquared >= 0)
                 return DistanceSquared;
-            Line3d line = new Line3d(segment.Center, segment.Direction);
-            DistLine3Triangle3 queryLT = new DistLine3Triangle3(line, triangle);
+
+            Line3d line = new Line3d(
+                segment.Center,
+                segment.Direction);
+
+            // Reuse the line-triangle query across calculations.
+            if (_cachedLineTriangleQuery == null)
+            {
+                _cachedLineTriangleQuery = new DistLine3Triangle3(line, triangle);
+            }
+
+            var queryLT = _cachedLineTriangleQuery;
+
+            queryLT.Line = line;
+            queryLT.Triangle = triangle;
+
             double sqrDist = queryLT.GetSquared();
             SegmentParam = queryLT.LineParam;
 
-            if (SegmentParam >= -segment.Extent) {
-                if (SegmentParam <= segment.Extent) {
+            if (SegmentParam >= -segment.Extent)
+            {
+                if (SegmentParam <= segment.Extent)
+                {
                     SegmentClosest = queryLT.LineClosest;
                     TriangleClosest = queryLT.TriangleClosest;
                     TriangleBaryCoords = queryLT.TriangleBaryCoords;
-                } else {
-                    SegmentClosest = segment.P1;
-                    DistPoint3Triangle3 queryPT = new DistPoint3Triangle3(SegmentClosest, triangle);
-                    sqrDist = queryPT.GetSquared();
-                    TriangleClosest = queryPT.TriangleClosest;
-                    SegmentParam = segment.Extent;
-                    TriangleBaryCoords = queryPT.TriangleBaryCoords;
                 }
-            } else {
+                else
+                {
+                    SegmentClosest = segment.P1;
+
+                    sqrDist = DistPoint3Triangle3.DistanceSqr(
+                        ref SegmentClosest,
+                        ref triangle,
+                        out TriangleClosest,
+                        out TriangleBaryCoords);
+
+                    SegmentParam = segment.Extent;
+                }
+            }
+            else
+            {
                 SegmentClosest = segment.P0;
-                DistPoint3Triangle3 queryPT = new DistPoint3Triangle3(SegmentClosest, triangle);
-                sqrDist = queryPT.GetSquared();
-                TriangleClosest = queryPT.TriangleClosest;
+
+                sqrDist = DistPoint3Triangle3.DistanceSqr(
+                    ref SegmentClosest,
+                    ref triangle,
+                    out TriangleClosest,
+                    out TriangleBaryCoords);
+
                 SegmentParam = -segment.Extent;
-                TriangleBaryCoords = queryPT.TriangleBaryCoords;
             }
 
             DistanceSquared = sqrDist;
             return DistanceSquared;
         }
+
+
     }
 }
