@@ -55,6 +55,13 @@ namespace g4
         public int TopDownLeafMaxTriCount = 4;
 
         /// <summary>
+        /// Optional root AABB rejection for mesh-to-mesh intersection tests.
+        /// This can accelerate disjoint pairs at the cost of one extra root test for overlaps.
+        /// Configure before issuing queries. Independent from the build strategy.
+        /// </summary>
+        public bool UseRootBoundsEarlyOut { get; set; } = true;
+
+        /// <summary>
         /// Experiment: use smaller backing blocks for small AABB trees.
         /// Off by default, preserving existing behavior.
         /// Set this property before Build().
@@ -91,8 +98,9 @@ namespace g4
                                     //   cluster boxes to build tree upward. Various cluster policies (below).
                                     //   About 2.5x slower than TopDownMidpoint. Trees are basically balanced, although
                                     //   current approach to clustering odd-count layers is to duplicate the extra box.
-            TopDownMedian           // Like TopDownMidpoint except we sort the triangle lists at each step and split on the median.
+            TopDownMedian,          // Like TopDownMidpoint except we sort the triangle lists at each step and split on the median.
                                     //   2-4x slower than TopDownMidpoint, but trees are generally more efficient and balanced.
+            TopDownLongestAxisMidpoint // Midpoint split on the longest centroid-spread axis, without sorting.
         }
 
         public enum ClusterPolicy
@@ -117,6 +125,8 @@ namespace g4
                 build_top_down(true);
             else if (eStrategy == BuildStrategy.TopDownMidpoint)
                 build_top_down(false);
+            else if (eStrategy == BuildStrategy.TopDownLongestAxisMidpoint)
+                build_top_down(false, true);
             else if (eStrategy == BuildStrategy.Default)
                 build_top_down(false);
             mesh_timestamp = mesh.ShapeTimestamp;
@@ -793,6 +803,13 @@ namespace g4
             if (mesh_timestamp != mesh.ShapeTimestamp)
                 throw new Exception("NTMeshAABBTree3.TestIntersection: mesh has been modified since tree construction");
 
+            if (UseRootBoundsEarlyOut)
+            {
+                AxisAlignedBox3d otherRoot = otherTree.get_boxd(otherTree.root_index, TransformF);
+                if (!box_box_intersect(root_index, ref otherRoot))
+                    return false;
+            }
+
             if (find_any_intersection(root_index, otherTree, TransformF, otherTree.root_index, 0))
                 return true;
 
@@ -865,7 +882,7 @@ namespace g4
                     oChild1 = (-oChild1) - 1;
                     AxisAlignedBox3d oChild1Box = otherTree.get_boxd(oChild1, TransformF);
                     if (oChild1Box.Intersects(bounds))
-                        return find_any_intersection(iBox, otherTree, TransformF, oBox, depth + 1);
+                        return find_any_intersection(iBox, otherTree, TransformF, oChild1, depth + 1);
 
                 }
                 else
@@ -929,6 +946,13 @@ namespace g4
         {
             if (mesh_timestamp != mesh.ShapeTimestamp)
                 throw new Exception("NTMeshAABBTree3.TestIntersection: mesh has been modified since tree construction");
+
+            if (UseRootBoundsEarlyOut)
+            {
+                AxisAlignedBox3d otherRoot = otherTree.get_boxd(otherTree.root_index, TransformF);
+                if (!box_box_intersect(root_index, ref otherRoot))
+                    return (false, -1, -1);
+            }
 
             return find_any_intersection_get_triangles(root_index, otherTree, TransformF, otherTree.root_index, 0);
         }
@@ -999,7 +1023,7 @@ namespace g4
                     oChild1 = (-oChild1) - 1;
                     AxisAlignedBox3d oChild1Box = otherTree.get_boxd(oChild1, TransformF);
                     if (oChild1Box.Intersects(bounds))
-                        return find_any_intersection_get_triangles(iBox, otherTree, TransformF, oBox, depth + 1);
+                        return find_any_intersection_get_triangles(iBox, otherTree, TransformF, oChild1, depth + 1);
 
                 }
                 else
@@ -3068,7 +3092,7 @@ namespace g4
 
 
 
-        void build_top_down(bool bSorted)
+        void build_top_down(bool bSorted, bool longestCentroidAxis = false)
         {
             // build list of valid triangles & centers. We skip any
             // triangles that have infinite/garbage vertices...
@@ -3084,7 +3108,7 @@ namespace g4
                 if (bInvalid == false)
                 {
                     triangles[i] = ti;
-                    centers[i] = mesh.GetTriCentroid(ti);
+                    centers[i] = centroid; // Already calculated above.
                     i++;
                 } // otherwise skip this tri
             }
@@ -3094,8 +3118,8 @@ namespace g4
             boxes_set nodes = new boxes_set(blockSize);
             AxisAlignedBox3f rootBox;
             int rootnode = (bSorted) ?
-                split_tri_set_sorted(triangles, centers, 0, mesh.TriangleCount, 0, TopDownLeafMaxTriCount, tris, nodes, out rootBox)
-                : split_tri_set_midpoint(triangles, centers, 0, mesh.TriangleCount, 0, TopDownLeafMaxTriCount, tris, nodes, out rootBox);
+                split_tri_set_sorted(triangles, centers, 0, i, 0, TopDownLeafMaxTriCount, tris, nodes, out rootBox)
+                : split_tri_set_midpoint(triangles, centers, 0, i, 0, TopDownLeafMaxTriCount, tris, nodes, out rootBox, longestCentroidAxis);
 
             box_to_index = tris.box_to_index;
             box_centers = tris.box_centers;
@@ -3223,7 +3247,7 @@ namespace g4
 
 
         int split_tri_set_midpoint(int[] triangles, Vector3d[] centers, int iStart, int iCount, int depth, int minTriCount,
-            boxes_set tris, boxes_set nodes, out AxisAlignedBox3f box)
+            boxes_set tris, boxes_set nodes, out AxisAlignedBox3f box, bool longestCentroidAxis = false)
         {
             box = AxisAlignedBox3f.Empty;
             int iBox = -1;
@@ -3247,11 +3271,35 @@ namespace g4
                 return -(iBox + 1);
             }
 
-            //compute interval along an axis and find midpoint
+            // Select a split axis. The existing strategy cycles X/Y/Z; the new
+            // strategy chooses the axis with the largest spread of triangle centroids.
+            // This is a general-purpose heuristic (not specific to IFC slabs).
             int axis = depth % 3;
             Interval1d interval = Interval1d.Empty;
-            for (int i = 0; i < iCount; ++i)
-                interval.Contain(centers[iStart + i][axis]);
+            if (longestCentroidAxis)
+            {
+                double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+                double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
+                for (int i = 0; i < iCount; ++i)
+                {
+                    Vector3d c = centers[iStart + i];
+                    if (c.x < minX) minX = c.x;
+                    if (c.x > maxX) maxX = c.x;
+                    if (c.y < minY) minY = c.y;
+                    if (c.y > maxY) maxY = c.y;
+                    if (c.z < minZ) minZ = c.z;
+                    if (c.z > maxZ) maxZ = c.z;
+                }
+                double dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+                axis = dx >= dy ? (dx >= dz ? 0 : 2) : (dy >= dz ? 1 : 2);
+                interval.Contain(axis == 0 ? minX : (axis == 1 ? minY : minZ));
+                interval.Contain(axis == 0 ? maxX : (axis == 1 ? maxY : maxZ));
+            }
+            else
+            {
+                for (int i = 0; i < iCount; ++i)
+                    interval.Contain(centers[iStart + i][axis]);
+            }
             double midpoint = interval.Center;
 
             int n0, n1;
@@ -3267,9 +3315,9 @@ namespace g4
                     // [RMS] is <= right here? if v.axis == midpoint, then this loop
                     //   can get stuck unless one of these has an equality test. But
                     //   I did not think enough about if this is the right thing to do...
-                    while (centers[iStart + l][axis] <= midpoint)
+                    while (l < iCount && centers[iStart + l][axis] <= midpoint)
                         l++;
-                    while (centers[iStart + r][axis] > midpoint)
+                    while (r >= 0 && centers[iStart + r][axis] > midpoint)
                         r--;
                     if (l >= r)
                         break;      //done!
@@ -3280,6 +3328,13 @@ namespace g4
 
                 n0 = l;
                 n1 = iCount - n0;
+                // Numerical degeneracy: if the midpoint produces an empty half,
+                // fall back to an index split without discarding triangles.
+                if (n0 == 0 || n1 == 0)
+                {
+                    n0 = iCount / 2;
+                    n1 = iCount - n0;
+                }
                 Debug.Assert(n0 >= 1 && n1 >= 1);
             }
             else
@@ -3291,8 +3346,8 @@ namespace g4
 
             // create child boxes
             AxisAlignedBox3f box1;
-            int child0 = split_tri_set_midpoint(triangles, centers, iStart, n0, depth + 1, minTriCount, tris, nodes, out box);
-            int child1 = split_tri_set_midpoint(triangles, centers, iStart + n0, n1, depth + 1, minTriCount, tris, nodes, out box1);
+            int child0 = split_tri_set_midpoint(triangles, centers, iStart, n0, depth + 1, minTriCount, tris, nodes, out box, longestCentroidAxis);
+            int child1 = split_tri_set_midpoint(triangles, centers, iStart + n0, n1, depth + 1, minTriCount, tris, nodes, out box1, longestCentroidAxis);
             box.Contain(box1);
 
             // append new box

@@ -23,7 +23,9 @@ internal static class FixtureMeshes
 
     // Non-overlapping, independent boxes, representative of structural elements.
     // Each box consists of 8 vertices / 12 triangles.
-    public static NTMesh3 CreateBoxes(int count)
+    public static NTMesh3 CreateBoxes(int count) => CreateBoxes(count, 0.0);
+
+    public static NTMesh3 CreateBoxes(int count, double offsetX)
     {
         if (count < 1) throw new ArgumentOutOfRangeException(nameof(count));
         var mesh = new NTMesh3(false, false, false, false);
@@ -36,7 +38,7 @@ internal static class FixtureMeshes
             double sx = i % 3 == 0 ? 0.25 : i % 3 == 1 ? 1.0 : 2.0;
             double sy = i % 3 == 0 ? 0.25 : i % 3 == 1 ? 1.0 : 1.6;
             double sz = i % 3 == 0 ? 3.5 : i % 3 == 1 ? 2.7 : 0.15;
-            AppendBox(mesh, x * 6, y * 6, 0, sx, sy, sz);
+            AppendBox(mesh, x * 6 + offsetX, y * 6, 0, sx, sy, sz);
         }
         return mesh;
     }
