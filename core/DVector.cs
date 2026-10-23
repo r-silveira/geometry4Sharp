@@ -19,19 +19,45 @@ namespace g4
         
         // [RMS] nBlockSize must be a power-of-two, so we can use bit-shifts in operator[]
         int nBlockSize = 2048;   // (1 << 11)
-        const int nShiftBits = 11;
-        const int nBlockIndexBitmask = 2047;   // low 11 bits
+        int nShiftBits = 11;
+        int nBlockIndexBitmask = 2047;   // low 11 bits
 
-        public DVector() {
+        public DVector() : this(2048) { }
+
+        /// <summary>
+        /// Creates a DVector with a configurable fixed block size.
+        /// The size must be a power of two; the default remains 2048.
+        /// Smaller blocks are intended for small, independent structures
+        /// (such as per-element BVHs), NOT as a global DMesh/NTMesh default.
+        /// </summary>
+        public DVector(int blockSize)
+        {
+            if (blockSize <= 0 || (blockSize & (blockSize - 1)) != 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(blockSize),
+                    "Block size must be a positive power of two.");
+            }
+
+            nBlockSize = blockSize;
+            nBlockIndexBitmask = blockSize - 1;
+            int shift = 0;
+            for (int n = blockSize; n > 1; n >>= 1)
+            {
+                shift++;
+            }
+
+            nShiftBits = shift;
+
             iCurBlock = 0;
             iCurBlockUsed = 0;
-            Blocks = new List<T[]>();
-            Blocks.Add(new T[nBlockSize]);
+            Blocks = new List<T[]>(1) { new T[blockSize] };
         }
 
         public DVector(DVector<T> copy)
         {
             nBlockSize = copy.nBlockSize;
+            nShiftBits = copy.nShiftBits;
+            nBlockIndexBitmask = copy.nBlockIndexBitmask;
             iCurBlock = copy.iCurBlock;
             iCurBlockUsed = copy.iCurBlockUsed;
             Blocks = new List<T[]>();

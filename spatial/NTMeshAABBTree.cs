@@ -54,6 +54,24 @@ namespace g4
         // Larger value == shallower trees, but leaves cost more to test
         public int TopDownLeafMaxTriCount = 4;
 
+        /// <summary>
+        /// Experiment: use smaller backing blocks for small AABB trees.
+        /// Off by default, preserving existing behavior.
+        /// Set this property before Build().
+        /// </summary>
+        public bool UseAdaptiveStorageBlocks { get; set; } = true;
+
+        private int GetStorageBlockSize()
+        {
+            if (!UseAdaptiveStorageBlocks)
+            {
+                return 2048;
+            }
+
+            var count = mesh.TriangleCount;
+            return count <= 16 ? 64 : (count <= 128 ? 256 : 2048);
+        }
+
         // bottom-up FastVolumeMetric cluster policy sorts available boxes along an axis
         // and then proceeds from min to max, greedily grouping best-pairs. This value determines
         // the range of the greedy search. Larger == slower but better bounding
@@ -3071,8 +3089,9 @@ namespace g4
                 } // otherwise skip this tri
             }
 
-            boxes_set tris = new boxes_set();
-            boxes_set nodes = new boxes_set();
+            int blockSize = GetStorageBlockSize();
+            boxes_set tris = new boxes_set(blockSize);
+            boxes_set nodes = new boxes_set(blockSize);
             AxisAlignedBox3f rootBox;
             int rootnode = (bSorted) ?
                 split_tri_set_sorted(triangles, centers, 0, mesh.TriangleCount, 0, TopDownLeafMaxTriCount, tris, nodes, out rootBox)
@@ -3130,12 +3149,20 @@ namespace g4
 
         class boxes_set
         {
-            public DVector<int> box_to_index = new DVector<int>();
-            public DVector<Vector3f> box_centers = new DVector<Vector3f>();
-            public DVector<Vector3f> box_extents = new DVector<Vector3f>();
-            public DVector<int> index_list = new DVector<int>();
+            public DVector<int> box_to_index;
+            public DVector<Vector3f> box_centers;
+            public DVector<Vector3f> box_extents;
+            public DVector<int> index_list;
             public int iBoxCur = 0;
             public int iIndicesCur = 0;
+
+            public boxes_set(int blockSize)
+            {
+                box_to_index = new DVector<int>(blockSize);
+                box_centers = new DVector<Vector3f>(blockSize);
+                box_extents = new DVector<Vector3f>(blockSize);
+                index_list = new DVector<int>(blockSize);
+            }
         }
 
         int split_tri_set_sorted(int[] triangles, Vector3d[] centers, int iStart, int iCount, int depth, int minTriCount,
@@ -3297,12 +3324,13 @@ namespace g4
         //  3) repeat until layer K has only 1 box, which is root of tree
         void build_by_one_rings(ClusterPolicy ePolicy)
         {
-            box_to_index = new DVector<int>();
-            box_centers = new DVector<Vector3f>();
-            box_extents = new DVector<Vector3f>();
+            int blockSize = GetStorageBlockSize();
+            box_to_index = new DVector<int>(blockSize);
+            box_centers = new DVector<Vector3f>(blockSize);
+            box_extents = new DVector<Vector3f>(blockSize);
             int iBoxCur = 0;
 
-            index_list = new DVector<int>();
+            index_list = new DVector<int>(blockSize);
             int iIndicesCur = 0;
 
             // replace w/ BitArray ?
