@@ -175,10 +175,12 @@ namespace g4
             for (int i = nNumSegs; i < nCurCount; ++i)
                 Blocks[i] = null;
 
-            // resize to right number of segments
-            if ( nNumSegs >= Blocks.Count )
-                Blocks.Capacity = nNumSegs;
-            else
+            // Keep the List<T[]> backing array's geometric growth policy.
+            // Explicitly setting Capacity to nNumSegs on each resize used to
+            // undo that policy and could reallocate/copy it on every new block.
+            // Shrinking removes unused blocks but intentionally retains the
+            // small array of references for future growth.
+            if (nNumSegs < Blocks.Count)
                 Blocks.RemoveRange(nNumSegs, Blocks.Count - nNumSegs);
 
             // allocate new segments
