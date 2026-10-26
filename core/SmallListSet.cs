@@ -36,13 +36,19 @@ namespace g4
         int free_head_ptr;              // index of first free element in linked_store
 
 
-        public SmallListSet()
+        public SmallListSet() : this(2048) { }
+
+        /// <summary>
+        /// Configures the capacity of the list-heads and main block-store buffers.
+        /// The linked/free auxiliary buffers remain at 64 elements initially.
+        /// </summary>
+        public SmallListSet(int blockSize)
         {
-            list_heads = new DVector<int>();
-            linked_store = new DVector<int>();
+            list_heads = new DVector<int>(blockSize);
+            linked_store = new DVector<int>(64);
             free_head_ptr = Null;
-            block_store = new DVector<int>();
-            free_blocks = new DVector<int>();
+            block_store = new DVector<int>(blockSize);
+            free_blocks = new DVector<int>(64);
         }
 
 

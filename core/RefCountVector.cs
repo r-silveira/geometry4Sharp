@@ -22,10 +22,16 @@ namespace g4
         DVector<int> free_indices;
         int used_count;
 
-        public RefCountVector()
+        public RefCountVector() : this(2048) { }
+
+        /// <summary>
+        /// Configures the capacity of the main ref-count buffer. The free-index
+        /// buffer remains small (64), as it is usually empty for static meshes.
+        /// </summary>
+        public RefCountVector(int blockSize)
         {
-            ref_counts = new DVector<short>();
-            free_indices = new DVector<int>();
+            ref_counts = new DVector<short>(blockSize);
+            free_indices = new DVector<int>(64);
             used_count = 0;
         }
 
@@ -39,7 +45,7 @@ namespace g4
         public RefCountVector(short[] raw_ref_counts, bool build_free_list = false)
         {
             ref_counts = new DVector<short>(raw_ref_counts);
-            free_indices = new DVector<int>();
+            free_indices = new DVector<int>(64);
             used_count = 0;
             if (build_free_list)
                 rebuild_free_list();
@@ -194,7 +200,7 @@ namespace g4
 
         public void rebuild_free_list()
         {
-            free_indices = new DVector<int>();
+            free_indices = new DVector<int>(64);
             used_count = 0;
 
             int N = ref_counts.Length;
@@ -209,7 +215,7 @@ namespace g4
 
         public void trim(int maxIndex)
         {
-            free_indices = new DVector<int>();
+            free_indices = new DVector<int>(64);
             ref_counts.resize(maxIndex);
             used_count = maxIndex;
         }

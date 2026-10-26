@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <Compile Remove="geometry4SharpTests\**" />
+    <Compile Remove="benchmarks\**" />
     <EmbeddedResource Remove="geometry4SharpTests\**" />
     <None Remove="geometry4SharpTests\**" />
   </ItemGroup>
