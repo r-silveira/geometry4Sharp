@@ -436,9 +436,9 @@ namespace g4
         public virtual int FindAllHitTriangles(Ray3d ray, List<int> hitTriangles = null, double fMaxDist = double.MaxValue, bool handleCoplanarRays = false)
         {
             if (mesh_timestamp != mesh.ShapeTimestamp)
-                throw new Exception("NTMeshAABBTree3.FindNearestHitTriangle: mesh has been modified since tree construction");
+                throw new Exception("NTMeshAABBTree3.FindAllHitTriangles: mesh has been modified since tree construction");
             if (ray.Direction.IsNormalized == false)
-                throw new Exception("NTMeshAABBTree3.FindNearestHitTriangle: ray direction is not normalized");
+                throw new Exception("NTMeshAABBTree3.FindAllHitTriangles: ray direction is not normalized");
 
             // [RMS] note: using float.MaxValue here because we need to use <= to compare box hit
             //   to fNearestT, and box hit returns double.MaxValue on no-hit. So, if we set
@@ -448,7 +448,41 @@ namespace g4
             return nCount;
         }
 
+        /// <summary>
+        /// Find all intersected triangles and their ray parameters (distance along the ray).
+        /// Uses the same intersection test, distance cutoff, and traversal order as
+        /// FindAllHitTriangles, without recomputing the triangle intersection.
+        /// </summary>
+        /// <remarks>
+        /// Results are appended to <paramref name="hitTriangles"/>; the list is not cleared.
+        /// One value tuple is stored per hit, without allocating an object per hit.
+        /// The caller can compute the hit point using ray.PointAt(hit.RayParameter).
+        /// </remarks>
+        public virtual int FindAllHitTrianglesWithParameters(
+            Ray3d ray, List<(int TriangleId, double RayParameter)> hitTriangles,
+            double fMaxDist = double.MaxValue, bool handleCoplanarRays = false)
+        {
+            if (hitTriangles == null)
+                throw new ArgumentNullException(nameof(hitTriangles));
+            if (mesh_timestamp != mesh.ShapeTimestamp)
+                throw new Exception("NTMeshAABBTree3.FindAllHitTrianglesWithParameters: mesh has been modified since tree construction");
+            if (ray.Direction.IsNormalized == false)
+                throw new Exception("NTMeshAABBTree3.FindAllHitTrianglesWithParameters: ray direction is not normalized");
+
+            // Match FindAllHitTriangles' distance behavior exactly.
+            double fUseMaxDist = (fMaxDist < double.MaxValue) ? fMaxDist : float.MaxValue;
+            return find_all_hit_triangles_impl(root_index, null, hitTriangles, ref ray, fUseMaxDist, handleCoplanarRays);
+        }
+
+        // Keep the existing protected signature for source/binary compatibility.
         protected int find_all_hit_triangles(int iBox, List<int> hitTriangles, ref Ray3d ray, double fMaxDist, bool handleCoplanarRays = false)
+        {
+            return find_all_hit_triangles_impl(iBox, hitTriangles, null, ref ray, fMaxDist, handleCoplanarRays);
+        }
+
+        private int find_all_hit_triangles_impl(
+            int iBox, List<int> hitTriangles, List<(int TriangleId, double RayParameter)> hitParameters,
+            ref Ray3d ray, double fMaxDist, bool handleCoplanarRays)
         {
             int hit_count = 0;
 
@@ -471,6 +505,8 @@ namespace g4
                         {
                             if (hitTriangles != null)
                                 hitTriangles.Add(ti);
+                            if (hitParameters != null)
+                                hitParameters.Add((ti, rayt));
                             hit_count++;
                         }
                     }
@@ -495,7 +531,7 @@ namespace g4
                     iChild1 = (-iChild1) - 1;
                     double fChild1T = box_ray_intersect_t(iChild1, ray);
                     if (fChild1T <= fMaxDist + e)
-                        hit_count += find_all_hit_triangles(iChild1, hitTriangles, ref ray, fMaxDist, handleCoplanarRays);
+                        hit_count += find_all_hit_triangles_impl(iChild1, hitTriangles, hitParameters, ref ray, fMaxDist, handleCoplanarRays);
 
                 }
                 else
@@ -505,11 +541,11 @@ namespace g4
 
                     double fChild1T = box_ray_intersect_t(iChild1, ray);
                     if (fChild1T <= fMaxDist + e)
-                        hit_count += find_all_hit_triangles(iChild1, hitTriangles, ref ray, fMaxDist, handleCoplanarRays);
+                        hit_count += find_all_hit_triangles_impl(iChild1, hitTriangles, hitParameters, ref ray, fMaxDist, handleCoplanarRays);
 
                     double fChild2T = box_ray_intersect_t(iChild2, ray);
                     if (fChild2T <= fMaxDist + e)
-                        hit_count += find_all_hit_triangles(iChild2, hitTriangles, ref ray, fMaxDist, handleCoplanarRays);
+                        hit_count += find_all_hit_triangles_impl(iChild2, hitTriangles, hitParameters, ref ray, fMaxDist, handleCoplanarRays);
                 }
             }
 
